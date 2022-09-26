@@ -3,7 +3,7 @@ use crate::picture::Picture;
 use crate::{Cache, Expression};
 use anyhow::Error;
 use dpc_pariter::IteratorExt;
-use log::{debug, error, warn};
+use log::{debug, error, info, warn};
 use regex::Regex;
 use std::fs;
 use std::ops::Add;
@@ -66,15 +66,16 @@ pub fn sort(
         }
 
         debug!("Processing {}", picture.short_path);
-        println!("{:?}", picture.get("DateTime"));
-        //println!("{:?}", picture.metadata);
 
-        println!("{}", expression.execute(&picture)?);
-
-        println!("--------------------------------------------------------------");
-        println!("--------------------------------------------------------------");
-        println!("--------------------------------------------------------------");
-        println!("--------------------------------------------------------------");
+        match expression.execute(&picture) {
+            Ok(name) => {
+                info!("Would rename {} to {}", picture.short_path, name)
+            }
+            Err(err) => warn!(
+                "Skipping {}, unable to apply name template due to `{}`.",
+                picture.short_path, err
+            ),
+        }
     }
 
     Ok(())

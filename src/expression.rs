@@ -1,11 +1,19 @@
 // {key|altkey|3rdkey...|nthkey:format}
 
 use std::ops::Add;
+use std::path;
 
 use crate::format::format;
 use crate::picture::Picture;
 use anyhow::anyhow;
 use anyhow::Result;
+use lazy_static::lazy_static;
+use regex::Regex;
+
+lazy_static! {
+    static ref PATH_SEPARATOR_REGEX: Regex = Regex::new("[\\\\/]").unwrap();
+    static ref PATH_SEPARATOR: String = path::MAIN_SEPARATOR.to_string();
+}
 
 #[derive(Debug)]
 pub struct Expression {
@@ -25,6 +33,11 @@ impl Expression {
         for expression in &self.expressions {
             buffer = buffer.add(&expression.execute(picture)?);
         }
+
+        // coerce the path separators to the platform ones
+        buffer = PATH_SEPARATOR_REGEX
+            .replace_all(&buffer, &*PATH_SEPARATOR)
+            .to_string();
 
         Ok(buffer)
     }
