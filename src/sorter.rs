@@ -43,7 +43,9 @@ pub fn sort(
             }
         })
         .filter(|e| e.file_type().is_file())
-        .parallel_map(move |entry: DirEntry| Picture::from_dir_entry(&source_path2, entry, cache));
+        .parallel_map(move |entry: DirEntry| {
+            Picture::from_dir_entry(&source_path2, entry, cache.clone())
+        });
 
     for file in files {
         let picture = match file {

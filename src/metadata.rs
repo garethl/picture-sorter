@@ -1,15 +1,17 @@
-use std::collections::HashMap;
-use std::path::Path;
+use crate::exiftool::Exif;
 use anyhow::anyhow;
 use anyhow::Result;
 use lazy_static::lazy_static;
 use log::debug;
+use serde::Deserialize;
+use serde::Serialize;
+use std::collections::HashMap;
+use std::path::Path;
 use unicase::UniCase;
-use crate::exiftool::Exif;
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ExifMetadata {
-    data: HashMap<String, String>
+    data: HashMap<String, String>,
 }
 
 impl ExifMetadata {
@@ -27,9 +29,15 @@ pub fn get_metadata(path: &Path) -> Result<ExifMetadata> {
     let exif = Exif::new(Path::new(&path))
         .map_err(|err| anyhow!("Error extracting exif data. {}", err))?;
 
-    let lowercase_map = exif.attributes.into_iter().map(|(k, v) | (k.to_lowercase(), v)).collect();
+    let lowercase_map = exif
+        .attributes
+        .into_iter()
+        .map(|(k, v)| (k.to_lowercase(), v))
+        .collect();
 
-    Ok(ExifMetadata { data: lowercase_map })
+    Ok(ExifMetadata {
+        data: lowercase_map,
+    })
 }
 
 #[cfg(not(target_os = "windows"))]

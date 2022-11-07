@@ -1,7 +1,7 @@
 use crate::cache::Cache;
 use crate::expression::Expression;
 use crate::options::Options;
-use anyhow::Error;
+use anyhow::Result;
 use clap::Parser;
 use log::{debug, error};
 use std::process::exit;
@@ -11,13 +11,14 @@ mod exclusion;
 mod exiftool;
 mod expression;
 mod format;
+mod kv_store;
 mod logging;
 mod metadata;
 mod options;
 mod picture;
 mod sorter;
 
-fn main() {
+fn main() -> Result<()> {
     let args: Options = Options::parse();
     logging::configure(args.quiet, args.verbose);
 
@@ -25,8 +26,10 @@ fn main() {
         error!("exiftool not available. Please ensure it is available in your path");
     }
 
-    let cache = Cache::new(args.cache_dir);
+    let cache = Cache::new(args.cache_dir)?;
     let expression = Expression::new(&args.format);
+
+    log::info!("Cache initialized");
 
     match sorter::sort(
         cache,
@@ -36,7 +39,8 @@ fn main() {
         args.exclude,
     ) {
         Ok(_) => {
-            debug!("Finished")
+            debug!("Finished");
+            Ok(())
         }
         Err(err) => {
             error!("Fatal error: {}", err);
