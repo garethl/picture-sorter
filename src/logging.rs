@@ -5,7 +5,9 @@ use log4rs::encode::pattern::PatternEncoder;
 
 pub fn configure(quiet: bool, verbose: bool) {
     let stdout = ConsoleAppender::builder()
-        .encoder(Box::new(PatternEncoder::new("{d(%Y-%m-%d %H:%M:%S.%3f)} {l} [{I}] {t} - {m}{n}")))
+        .encoder(Box::new(PatternEncoder::new(
+            "{d(%Y-%m-%d %H:%M:%S.%3f)} {l} [{I}] {t} - {m}{n}",
+        )))
         .build();
 
     let level = if verbose {

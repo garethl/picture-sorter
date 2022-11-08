@@ -37,6 +37,7 @@ fn main() -> Result<()> {
         args.source,
         args.destination,
         args.exclude,
+        args.dry_run,
     ) {
         Ok(_) => {
             debug!("Finished");

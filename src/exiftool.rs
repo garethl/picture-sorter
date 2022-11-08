@@ -1,15 +1,13 @@
 // some code from https://github.com/alexipeck/exif, but this is using the json output, so
 //  has more reliable parsing.
 
-use std::{
-    collections::{HashMap, HashSet},
-    fmt,
-    path::Path,
-    process::{Command, Stdio},
-    sync::Arc,
-};
 use anyhow::{anyhow, Context, Result};
 use serde_json::{Map, Value};
+use std::{
+    collections::HashMap,
+    path::Path,
+    process::{Command, Stdio},
+};
 
 pub fn exiftool_available() -> bool {
     return Command::new("exiftool")
@@ -18,7 +16,6 @@ pub fn exiftool_available() -> bool {
         .spawn()
         .is_ok();
 }
-
 
 #[derive(Clone, Debug, Default)]
 pub struct Exif {
@@ -68,10 +65,17 @@ impl Exif {
         let json: Value = serde_json::from_str(&output).context("Error extracting exif data")?;
         let obj = extract_map(&json);
         if obj.is_none() {
-            return Err(anyhow!("Error extracting exif data - invalid json `{}`", &output));
+            return Err(anyhow!(
+                "Error extracting exif data - invalid json `{}`",
+                &output
+            ));
         }
 
-        let map = obj.unwrap().into_iter().map(|(k, v)| (k.to_string(), get_string(v))).collect();
+        let map = obj
+            .unwrap()
+            .into_iter()
+            .map(|(k, v)| (k.to_string(), get_string(v)))
+            .collect();
         Ok(Exif { attributes: map })
     }
 }
@@ -82,7 +86,7 @@ fn get_string(value: &Value) -> String {
         Value::Bool(v) => v.to_string(),
         Value::Number(v) => v.to_string(),
         Value::String(v) => v.clone(),
-        _ => value.to_string()
+        _ => value.to_string(),
     }
 }
 

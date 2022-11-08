@@ -1,13 +1,11 @@
 use crate::exiftool::Exif;
 use anyhow::anyhow;
 use anyhow::Result;
-use lazy_static::lazy_static;
 use log::debug;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::path::Path;
-use unicase::UniCase;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ExifMetadata {

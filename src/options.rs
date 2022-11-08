@@ -1,5 +1,5 @@
-use std::path::Path;
 use clap::Parser;
+use std::path::Path;
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -37,7 +37,7 @@ pub struct Options {
     pub verbose: bool,
 
     /// Verbose logging
-    #[clap(short, long, value_parser, default_value_t = true)]
+    #[clap(short, long, value_parser, default_value_t = false)]
     pub dry_run: bool,
 }
 
