@@ -37,6 +37,7 @@ fn main() -> Result<()> {
         args.source,
         args.destination,
         args.exclude,
+        args.use_hard_links,
         args.dry_run,
     ) {
         Ok(_) => {

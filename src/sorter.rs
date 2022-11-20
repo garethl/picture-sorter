@@ -1,7 +1,7 @@
 use crate::exclusion::build_exclusion_filter;
 use crate::picture::Picture;
 use crate::{Cache, Expression};
-use anyhow::Error;
+use anyhow::{Context, Error};
 use dpc_pariter::IteratorExt;
 use log::{debug, error, info, warn};
 use std::fs::create_dir_all;
@@ -14,6 +14,7 @@ pub fn sort(
     source: String,
     destination: String,
     exclusions: Vec<String>,
+    use_hard_links: bool,
     dry_run: bool,
 ) -> Result<(), Error> {
     let exclusion_filter = build_exclusion_filter(exclusions);
@@ -74,7 +75,7 @@ pub fn sort(
         .flatten();
 
     for picture in pictures {
-        process_picture(&expression, &destination, dry_run, picture)?;
+        process_picture(&expression, &destination, dry_run, picture, use_hard_links)?;
     }
 
     Ok(())
@@ -85,6 +86,7 @@ fn process_picture(
     destination: &str,
     dry_run: bool,
     picture: Picture,
+    use_hard_links: bool,
 ) -> anyhow::Result<()> {
     debug!("Processing {}", picture.short_path);
 
@@ -107,12 +109,24 @@ fn process_picture(
                         create_dir_all(destination_dir)?;
                     }
 
-                    //TODO: Copy
-                } else {
-                    //TODO: wat
-                }
+                    let path = picture.path;
+                    if use_hard_links {
+                        std::fs::hard_link(&path, &destination).with_context(|| {
+                            format!(
+                                "Error creating hard-link from {} to {:?}",
+                                &path, &destination
+                            )
+                        })?;
+                    } else {
+                        std::fs::copy(&path, &destination).with_context(|| {
+                            format!("Error copying {} to {:?}", &path, &destination)
+                        })?;
+                    }
 
-                info!("copied {} to {}", picture.short_path, destination.display())
+                    info!("copied {} to {}", picture.short_path, destination.display())
+                } else {
+                    todo!("File already exists; not implemented yet!")
+                }
             }
         }
         Err(err) => warn!(

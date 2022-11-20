@@ -56,6 +56,7 @@ fn get_date_time_from_filename(picture: &Picture) -> Option<String> {
 
 #[derive(Debug)]
 pub struct Picture {
+    pub path: String,
     pub dir_entry: DirEntry,
     pub short_path: String,
     pub metadata: ExifMetadata,
@@ -122,6 +123,7 @@ impl Picture {
             })?;
 
         Ok(Picture {
+            path: path_string.to_string(),
             short_path,
             dir_entry,
             metadata,
