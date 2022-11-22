@@ -4,7 +4,7 @@ use crate::{Cache, Expression};
 use anyhow::{Context, Error};
 use dpc_pariter::IteratorExt;
 use log::{debug, error, info, warn};
-use std::fs::create_dir_all;
+use std::fs::{create_dir_all, metadata};
 use std::path::Path;
 use walkdir::{DirEntry, WalkDir};
 
@@ -15,6 +15,7 @@ pub fn sort(
     destination: String,
     exclusions: Vec<String>,
     use_hard_links: bool,
+    overwrite: bool,
     dry_run: bool,
 ) -> Result<(), Error> {
     let exclusion_filter = build_exclusion_filter(exclusions);
@@ -75,7 +76,14 @@ pub fn sort(
         .flatten();
 
     for picture in pictures {
-        process_picture(&expression, &destination, dry_run, picture, use_hard_links)?;
+        process_picture(
+            &expression,
+            &destination,
+            picture,
+            use_hard_links,
+            overwrite,
+            dry_run,
+        )?;
     }
 
     Ok(())
@@ -84,49 +92,70 @@ pub fn sort(
 fn process_picture(
     expression: &Expression,
     destination: &str,
-    dry_run: bool,
     picture: Picture,
     use_hard_links: bool,
+    overwrite: bool,
+    dry_run: bool,
 ) -> anyhow::Result<()> {
     debug!("Processing {}", picture.short_path);
 
     match expression.execute(&picture) {
         Ok(name) => {
             if dry_run {
-                info!("[dry-run] copy {} to {}", picture.short_path, name)
-            } else {
-                let destination = Path::new(destination).join(name);
+                info!("[dry-run] copy {} to {}", picture.short_path, name);
+                return Ok(());
+            }
 
-                debug!(
-                    "Going to copy {} to {}",
+            let destination = Path::new(destination).join(name);
+
+            debug!(
+                "Going to copy {} to {}",
+                picture.short_path,
+                destination.display()
+            );
+
+            let path = picture.path;
+
+            if let Some(destination_dir) = destination.parent() {
+                debug!("Creating path {}", destination_dir.display());
+                create_dir_all(destination_dir)?;
+            }
+
+            let destination_exists = destination.exists();
+            let overwrite_required = if destination.exists() {
+                are_files_different(&path, &destination)?
+            } else {
+                false
+            };
+
+            if overwrite_required && !overwrite {
+                info!("Skipping {}. The destination ({}) already exists, is different, and overwrite flag not provided.", picture.short_path, destination.display());
+                return Ok(());
+            }
+
+            if !overwrite_required && destination_exists && !overwrite {
+                info!("Skipping {}. The destination ({}) already exists, is the same, and overwrite flag not provided.", picture.short_path, destination.display());
+                return Ok(());
+            }
+
+            if use_hard_links {
+                std::fs::hard_link(&path, &destination).with_context(|| {
+                    format!(
+                        "Error creating hard-link from {} to {}",
+                        &path,
+                        &destination.display()
+                    )
+                })?;
+                info!(
+                    "hard-linked {} to {}",
                     picture.short_path,
                     destination.display()
-                );
-
-                if !destination.exists() {
-                    if let Some(destination_dir) = destination.parent() {
-                        debug!("Creating path {}", destination_dir.display());
-                        create_dir_all(destination_dir)?;
-                    }
-
-                    let path = picture.path;
-                    if use_hard_links {
-                        std::fs::hard_link(&path, &destination).with_context(|| {
-                            format!(
-                                "Error creating hard-link from {} to {:?}",
-                                &path, &destination
-                            )
-                        })?;
-                    } else {
-                        std::fs::copy(&path, &destination).with_context(|| {
-                            format!("Error copying {} to {:?}", &path, &destination)
-                        })?;
-                    }
-
-                    info!("copied {} to {}", picture.short_path, destination.display())
-                } else {
-                    todo!("File already exists; not implemented yet!")
-                }
+                )
+            } else {
+                std::fs::copy(&path, &destination).with_context(|| {
+                    format!("Error copying {} to {}", &path, &destination.display())
+                })?;
+                info!("copied {} to {}", picture.short_path, destination.display())
             }
         }
         Err(err) => warn!(
@@ -136,6 +165,18 @@ fn process_picture(
     }
 
     Ok(())
+}
+
+fn are_files_different(path: &str, destination: &std::path::PathBuf) -> anyhow::Result<bool> {
+    let source_metadata = metadata(&path)?;
+    let destination_metadata = metadata(&destination)?;
+
+    let different = source_metadata.len() != destination_metadata.len()
+        || !source_metadata
+            .modified()?
+            .eq(&destination_metadata.modified()?);
+
+    Ok(different)
 }
 
 fn short_path_path(source_path: &str, path: &Path) -> String {

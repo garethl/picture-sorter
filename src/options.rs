@@ -16,6 +16,10 @@ pub struct Options {
     #[clap(short, long, value_parser, default_value_t = false)]
     pub use_hard_links: bool,
 
+    /// If a file exists at the destination, overwrite it instead of skipping it
+    #[clap(short, long, value_parser, default_value_t = false)]
+    pub overwrite: bool,
+
     /// Format string
     #[clap(short, long, value_parser)]
     pub format: String,

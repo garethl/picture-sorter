@@ -38,6 +38,7 @@ fn main() -> Result<()> {
         args.destination,
         args.exclude,
         args.use_hard_links,
+        args.overwrite,
         args.dry_run,
     ) {
         Ok(_) => {
