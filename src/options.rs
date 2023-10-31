@@ -29,7 +29,7 @@ pub struct Options {
     pub cache_dir: String,
 
     /// Exclude files matching pattern (* is a wildcard)
-    #[clap(short, long, value_parser)]
+    #[clap(short, long, value_parser, num_args = 1.., value_delimiter = ' ')]
     pub exclude: Vec<String>,
 
     /// Quiet logging (errors only)
@@ -40,7 +40,7 @@ pub struct Options {
     #[clap(short, long, value_parser, default_value_t = false)]
     pub verbose: bool,
 
-    /// Verbose logging
+    /// Dry-run mode
     #[clap(short, long, value_parser, default_value_t = false)]
     pub dry_run: bool,
 }

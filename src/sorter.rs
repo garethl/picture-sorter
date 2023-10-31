@@ -101,15 +101,12 @@ fn process_picture(
 
     match expression.execute(&picture) {
         Ok(name) => {
-            if dry_run {
-                info!("[dry-run] copy {} to {}", picture.short_path, name);
-                return Ok(());
-            }
-
+            let dry_run_prefix = if dry_run { "[dry-run] " } else { "" };
             let destination = Path::new(destination).join(name);
 
             debug!(
-                "Going to copy {} to {}",
+                "{}Going to copy {} to {}",
+                dry_run_prefix,
                 picture.short_path,
                 destination.display()
             );
@@ -117,8 +114,14 @@ fn process_picture(
             let path = picture.path;
 
             if let Some(destination_dir) = destination.parent() {
-                debug!("Creating path {}", destination_dir.display());
-                create_dir_all(destination_dir)?;
+                debug!(
+                    "{}Creating path {}",
+                    dry_run_prefix,
+                    destination_dir.display()
+                );
+                if !dry_run {
+                    create_dir_all(destination_dir)?;
+                }
             }
 
             let destination_exists = destination.exists();
@@ -129,33 +132,50 @@ fn process_picture(
             };
 
             if overwrite_required && !overwrite {
-                info!("Skipping {}. The destination ({}) already exists, is different, and overwrite flag not provided.", picture.short_path, destination.display());
+                info!("{}Skipping {}. The destination ({}) already exists, is different, and overwrite flag not provided.",
+                    dry_run_prefix, 
+                    picture.short_path,
+                    destination.display()
+                );
                 return Ok(());
             }
 
             if !overwrite_required && destination_exists && !overwrite {
-                info!("Skipping {}. The destination ({}) already exists, is the same, and overwrite flag not provided.", picture.short_path, destination.display());
+                info!("{}Skipping {}. The destination ({}) already exists, is the same, and overwrite flag not provided.", 
+                    dry_run_prefix, 
+                    picture.short_path, 
+                    destination.display()
+                );
                 return Ok(());
             }
 
             if use_hard_links {
-                std::fs::hard_link(&path, &destination).with_context(|| {
-                    format!(
-                        "Error creating hard-link from {} to {}",
-                        &path,
-                        &destination.display()
-                    )
-                })?;
+                if !dry_run {
+                    std::fs::hard_link(&path, &destination).with_context(|| {
+                        format!(
+                            "Error creating hard-link from {} to {}",
+                            &path,
+                            &destination.display()
+                        )
+                    })?;
+                }
                 info!(
-                    "hard-linked {} to {}",
+                    "{}hard-linked {} to {}",
+                    dry_run_prefix,
                     picture.short_path,
                     destination.display()
                 )
             } else {
-                std::fs::copy(&path, &destination).with_context(|| {
-                    format!("Error copying {} to {}", &path, &destination.display())
-                })?;
-                info!("copied {} to {}", picture.short_path, destination.display())
+                if !dry_run {
+                    std::fs::copy(&path, &destination).with_context(|| {
+                        format!("Error copying {} to {}", &path, &destination.display())
+                    })?;
+                }
+                info!("{}copied {} to {}", 
+                    dry_run_prefix,
+                    picture.short_path, 
+                    destination.display()
+                )
             }
         }
         Err(err) => warn!(

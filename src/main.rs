@@ -1,6 +1,6 @@
-use crate::cache::Cache;
 use crate::expression::Expression;
 use crate::options::Options;
+use crate::{cache::Cache, exiftool_executor::new_pool};
 use anyhow::Result;
 use clap::Parser;
 use log::{debug, error};
@@ -9,6 +9,7 @@ use std::process::exit;
 mod cache;
 mod exclusion;
 mod exiftool;
+mod exiftool_executor;
 mod expression;
 mod format;
 mod kv_store;
@@ -25,6 +26,8 @@ fn main() -> Result<()> {
     if !exiftool::exiftool_available() {
         error!("exiftool not available. Please ensure it is available in your path");
     }
+
+    let pool = new_pool()?;
 
     let cache = Cache::new(args.cache_dir)?;
     let expression = Expression::new(&args.format);
