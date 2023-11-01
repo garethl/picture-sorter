@@ -23,11 +23,13 @@ fn main() -> Result<()> {
     let args: Options = Options::parse();
     logging::configure(args.quiet, args.verbose);
 
+    log::debug!("Options: {:?}", &args);
+
     if !exiftool::exiftool_available() {
         error!("exiftool not available. Please ensure it is available in your path");
     }
 
-    let pool = new_pool()?;
+    let pool: exiftool_executor::ExifToolPool = new_pool()?;
 
     let cache = Cache::new(args.cache_dir)?;
     let expression = Expression::new(&args.format);

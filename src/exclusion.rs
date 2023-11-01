@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Context, Result};
+use log::debug;
 use regex::Regex;
 use std::ops::Add;
 
@@ -31,6 +32,7 @@ fn build_regex(exclusion: String) -> Result<Regex> {
             '*' => {
                 if buffer.len() > 0 {
                     result = result.add(&regex::escape(&buffer));
+                    buffer.truncate(0);
                 }
                 result = result.add(".*");
             }
@@ -47,5 +49,21 @@ fn build_regex(exclusion: String) -> Result<Regex> {
         result = result.add(&regex::escape(&buffer));
     }
 
+    debug!("Compiled regex exclusion: {}", &result);
+
     Regex::new(&result).context("Error compiling exclusion regex")
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn simple() -> Result<()> {
+        let regex = build_regex(".trashed-*".to_string()).unwrap();
+
+        assert_eq!("\\.trashed\\-.*", regex.as_str());
+
+        Ok(())
+    }
 }
