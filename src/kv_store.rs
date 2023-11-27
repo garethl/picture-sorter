@@ -46,7 +46,7 @@ where
         let manager = SqliteConnectionManager::file(store_file_name);
         let pool = Pool::builder()
             .idle_timeout(Some(Duration::from_millis(10000)))
-            .connection_timeout(Duration::from_millis(10))
+            .connection_timeout(Duration::from_millis(1000))
             .min_idle(Some(0))
             .build(manager)?;
 

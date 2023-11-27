@@ -2,6 +2,7 @@
 //  has more reliable parsing.
 
 use anyhow::{anyhow, Context, Result};
+use log::warn;
 use serde_json::{Map, Value};
 use std::{
     collections::HashMap,
@@ -10,11 +11,25 @@ use std::{
 };
 
 pub fn exiftool_available() -> bool {
-    return Command::new("exiftool")
+    match Command::new("exiftool")
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
-        .is_ok();
+    {
+        Ok(mut child) => {
+            match child.wait() {
+                Ok(_) => {}
+                Err(err) => {
+                    warn!("Error waiting on exiftool execution: {}", err)
+                }
+            }
+            true
+        }
+        Err(err) => {
+            warn!("Unable to execute exiftool: {}", err);
+            false
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default)]
