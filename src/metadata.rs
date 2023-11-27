@@ -24,8 +24,7 @@ pub fn get_metadata(path: &Path) -> Result<ExifMetadata> {
 
     debug!("Reading exif data from {}", path);
 
-    let exif = Exif::new(Path::new(&path))
-        .map_err(|err| anyhow!("Error extracting exif data. {}", err))?;
+    let exif = Exif::new(Path::new(&path)).map_err(|err| anyhow!("{}", err))?;
 
     let lowercase_map = exif
         .attributes

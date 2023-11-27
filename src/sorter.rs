@@ -51,7 +51,7 @@ pub fn sort(
             let picture = match result {
                 Ok(file) => Some(file),
                 Err(err) => {
-                    error!(
+                    warn!(
                         "Error reading metadata for `{}`. Ignoring. {}",
                         err.short_path, err.error
                     );
@@ -141,7 +141,7 @@ fn process_picture(
             }
 
             if !overwrite_required && destination_exists && !overwrite {
-                info!("{}Skipping {}. The destination ({}) already exists, is the same, and overwrite flag not provided.", 
+                debug!("{}Skipping {}. The destination ({}) already exists, is the same, and overwrite flag not provided.", 
                     dry_run_prefix, 
                     picture.short_path, 
                     destination.display()

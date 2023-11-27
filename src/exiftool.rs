@@ -1,7 +1,7 @@
 // some code from https://github.com/alexipeck/exif, but this is using the json output, so
 //  has more reliable parsing.
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Context, Error, Result};
 use log::warn;
 use serde_json::{Map, Value};
 use std::{
@@ -59,25 +59,30 @@ impl Exif {
             }
         };
 
-        let stderr_output = match String::from_utf8(output.stderr) {
-            Ok(output) => output,
-            Err(err) => {
-                return Err(anyhow!(err.to_string()).context("Error extracting exif data"));
-            }
-        };
-
         if !output.status.success() {
-            return Err(anyhow!(stderr_output).context("Error extracting exif data"));
+            if let Err(err) = try_extract_exiftool_error(output.stdout, output.stderr) {
+                return Err(err);
+            }
+
+            return Err(anyhow!("Error extracting exif data: unknown error",));
         }
 
         let output = match String::from_utf8(output.stdout) {
             Ok(output) => output,
             Err(err) => {
-                return Err(anyhow!(err.to_string()).context("Error extracting exif data"));
+                return Err(anyhow!(
+                    "Error extracting exif data: invalid utf-8 string: {}",
+                    err
+                ));
             }
         };
 
-        let json: Value = serde_json::from_str(&output).context("Error extracting exif data")?;
+        let json: Value = serde_json::from_str(&output).map_err(|err| {
+            anyhow!(
+                "Error extracting exif data: json serialization error: {}",
+                err
+            )
+        })?;
         let obj = extract_map(&json);
         if obj.is_none() {
             return Err(anyhow!(
@@ -107,4 +112,47 @@ fn get_string(value: &Value) -> String {
 
 fn extract_map(value: &Value) -> Option<&Map<String, Value>> {
     value.as_array()?.get(0)?.as_object()
+}
+
+fn try_extract_exiftool_error(std_out: Vec<u8>, std_err: Vec<u8>) -> Result<(), Error> {
+    if std_err.len() > 0 {
+        return Err(anyhow!(
+            "Error extracting exif data: exiftool output: {}",
+            String::from_utf8_lossy(&std_err)
+        ));
+    } else {
+        // we have some json to parse
+        let output = match String::from_utf8(std_out) {
+            Ok(output) => output,
+            Err(err) => {
+                return Err(anyhow!(
+                    "Error extracting exif data: invalid utf-8 string: {}",
+                    err
+                ));
+            }
+        };
+        let json: Value = serde_json::from_str(&output)
+            .map_err(|err| anyhow!("Error extracting exif data: unknown error: {}", err))?;
+
+        match json {
+            Value::Array(value) => {
+                if value.len() > 0 {
+                    if value[0].is_object() {
+                        let value = value[0].as_object().unwrap();
+
+                        if let Some(value) = value.get("Error") {
+                            if value.is_string() {
+                                return Err(anyhow!(
+                                    "Error extracting exif data: {}",
+                                    value.as_str().unwrap()
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
 }
