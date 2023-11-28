@@ -18,6 +18,8 @@ mod metadata;
 mod options;
 mod picture;
 mod sorter;
+mod special;
+mod temp;
 
 fn main() -> Result<()> {
     let args: Options = Options::parse();

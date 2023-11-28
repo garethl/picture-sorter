@@ -1,5 +1,6 @@
 use crate::exclusion::build_exclusion_filter;
 use crate::picture::Picture;
+use crate::special::execute_special_handlers;
 use crate::{Cache, Expression};
 use anyhow::{Context, Error};
 use dpc_pariter::IteratorExt;
@@ -97,7 +98,7 @@ fn process_picture(
     overwrite: bool,
     dry_run: bool,
 ) -> anyhow::Result<()> {
-    debug!("Processing {}", picture.short_path);
+    debug!("Processing {}", &picture.short_path);
 
     match expression.execute(&picture) {
         Ok(name) => {
@@ -111,7 +112,7 @@ fn process_picture(
                 destination.display()
             );
 
-            let path = picture.path;
+            let path = &picture.path;
 
             if let Some(destination_dir) = destination.parent() {
                 debug!(
@@ -125,6 +126,23 @@ fn process_picture(
             }
 
             let destination_exists = destination.exists();
+
+            match execute_special_handlers(dry_run, dry_run_prefix, &picture, &destination, destination_exists) {
+                Ok(processed) => {
+                    if processed {
+                        return Ok(())
+                    }
+                },
+                Err(err) =>  {
+                    warn!("{}Error processing {}. Special handler errored: {}",
+                        dry_run_prefix, 
+                        picture.short_path,
+                        err
+                    );
+                    return Ok(());
+                }
+            }
+
             let overwrite_required = if destination.exists() {
                 are_files_different(&path, &destination)?
             } else {

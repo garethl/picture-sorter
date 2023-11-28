@@ -2,11 +2,13 @@
 //  has more reliable parsing.
 
 use anyhow::{anyhow, Context, Error, Result};
-use log::warn;
+use log::{debug, warn};
+use log4rs::append::file;
 use serde_json::{Map, Value};
 use std::{
     collections::HashMap,
-    path::Path,
+    ffi::OsStr,
+    path::{Path, PathBuf},
     process::{Command, Stdio},
 };
 
@@ -39,6 +41,7 @@ pub struct Exif {
 
 impl Exif {
     pub fn new(file_path: &Path) -> Result<Self> {
+        let file_path = adjust_canonicalization(file_path);
         let child = match Command::new("exiftool")
             .arg("-j")
             .arg(file_path)
@@ -98,6 +101,42 @@ impl Exif {
             .collect();
         Ok(Exif { attributes: map })
     }
+
+    pub fn execute(args: Vec<&OsStr>, stdout: Option<Stdio>) -> Result<()> {
+        let stdout = stdout.unwrap_or_else(|| Stdio::null());
+
+        debug!("Executing exiftool with arguments: {:?}", args);
+
+        let child = match Command::new("exiftool")
+            .args(args)
+            .stdout(stdout)
+            .stderr(Stdio::piped())
+            .spawn()
+        {
+            Ok(child) => child,
+            Err(err) => {
+                return Err(anyhow!(err.to_string()));
+            }
+        };
+
+        let output = match child.wait_with_output() {
+            Ok(output) => output,
+            Err(err) => {
+                return Err(anyhow!(err.to_string()));
+            }
+        };
+
+        debug!("exiftool exit status is {}", &output.status);
+
+        if !output.status.success() {
+            if let Err(err) = try_extract_exiftool_error(output.stdout, output.stderr) {
+                return Err(err);
+            }
+            return Err(anyhow!("Error executing exif tool: unknown error",));
+        }
+
+        Ok(())
+    }
 }
 
 fn get_string(value: &Value) -> String {
@@ -117,7 +156,7 @@ fn extract_map(value: &Value) -> Option<&Map<String, Value>> {
 fn try_extract_exiftool_error(std_out: Vec<u8>, std_err: Vec<u8>) -> Result<(), Error> {
     if std_err.len() > 0 {
         return Err(anyhow!(
-            "Error extracting exif data: exiftool output: {}",
+            "Error executing exiftool: exiftool output: {}",
             String::from_utf8_lossy(&std_err)
         ));
     } else {
@@ -126,13 +165,13 @@ fn try_extract_exiftool_error(std_out: Vec<u8>, std_err: Vec<u8>) -> Result<(), 
             Ok(output) => output,
             Err(err) => {
                 return Err(anyhow!(
-                    "Error extracting exif data: invalid utf-8 string: {}",
+                    "Error executing exiftool: invalid utf-8 string: {}",
                     err
                 ));
             }
         };
         let json: Value = serde_json::from_str(&output)
-            .map_err(|err| anyhow!("Error extracting exif data: unknown error: {}", err))?;
+            .map_err(|err| anyhow!("Error executing exiftool: unknown error: {}", err))?;
 
         match json {
             Value::Array(value) => {
@@ -143,7 +182,7 @@ fn try_extract_exiftool_error(std_out: Vec<u8>, std_err: Vec<u8>) -> Result<(), 
                         if let Some(value) = value.get("Error") {
                             if value.is_string() {
                                 return Err(anyhow!(
-                                    "Error extracting exif data: {}",
+                                    "Error executing exiftool: {}",
                                     value.as_str().unwrap()
                                 ));
                             }
@@ -155,4 +194,22 @@ fn try_extract_exiftool_error(std_out: Vec<u8>, std_err: Vec<u8>) -> Result<(), 
         }
         Ok(())
     }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn adjust_canonicalization<P: AsRef<Path>>(p: P) -> PathBuf {
+    PathBuf::from(p.as_ref())
+}
+
+#[cfg(target_os = "windows")]
+pub fn adjust_canonicalization<P: AsRef<Path>>(p: P) -> PathBuf {
+    const VERBATIM_PREFIX: &str = r#"\\?\"#;
+    let p = p.as_ref().display().to_string();
+    let p = if p.starts_with(VERBATIM_PREFIX) {
+        p[VERBATIM_PREFIX.len()..].to_string()
+    } else {
+        p
+    };
+
+    PathBuf::from(p)
 }
