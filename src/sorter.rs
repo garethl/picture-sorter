@@ -4,7 +4,7 @@ use crate::special::execute_special_handlers;
 use crate::{Cache, Expression};
 use anyhow::{Context, Error};
 use dpc_pariter::IteratorExt;
-use log::{debug, error, info, warn};
+use log::{debug, info, warn};
 use std::fs::{create_dir_all, metadata};
 use std::path::Path;
 use walkdir::{DirEntry, WalkDir};
@@ -37,7 +37,7 @@ pub fn sort(
                     None => warn!("Unknown error finding files. {}", err),
                     Some(path) => warn!(
                         "Error reading {}, skipping. {}",
-                        short_path_path(&source_path, &path),
+                        short_path_path(&source_path, path),
                         err
                     ),
                 };
@@ -144,7 +144,7 @@ fn process_picture(
             }
 
             let overwrite_required = if destination.exists() {
-                are_files_different(&path, &destination)?
+                are_files_different(path, &destination)?
             } else {
                 false
             };
@@ -169,7 +169,7 @@ fn process_picture(
 
             if use_hard_links {
                 if !dry_run {
-                    std::fs::hard_link(&path, &destination).with_context(|| {
+                    std::fs::hard_link(path, &destination).with_context(|| {
                         format!(
                             "Error creating hard-link from {} to {}",
                             &path,
@@ -185,7 +185,7 @@ fn process_picture(
                 )
             } else {
                 if !dry_run {
-                    std::fs::copy(&path, &destination).with_context(|| {
+                    std::fs::copy(path, &destination).with_context(|| {
                         format!("Error copying {} to {}", &path, &destination.display())
                     })?;
                 }
@@ -206,8 +206,8 @@ fn process_picture(
 }
 
 fn are_files_different(path: &str, destination: &std::path::PathBuf) -> anyhow::Result<bool> {
-    let source_metadata = metadata(&path)?;
-    let destination_metadata = metadata(&destination)?;
+    let source_metadata = metadata(path)?;
+    let destination_metadata = metadata(destination)?;
 
     let different = source_metadata.len() != destination_metadata.len()
         || !source_metadata

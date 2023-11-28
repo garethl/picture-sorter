@@ -13,22 +13,22 @@ pub struct KVStore<K, V> {
 }
 
 pub trait Convertable: Sized {
-    fn to_raw<'q>(&'q self) -> &'q [u8];
+    fn to_raw(&self) -> &[u8];
     fn from_raw(raw: &[u8]) -> Result<Self>;
 }
 
 impl Convertable for Vec<u8> {
-    fn to_raw<'q>(&'q self) -> &'q [u8] {
-        return self;
+    fn to_raw(&self) -> &[u8] {
+        self
     }
 
     fn from_raw(raw: &[u8]) -> Result<Self> {
-        return Ok(Vec::from(raw));
+        Ok(Vec::from(raw))
     }
 }
 
 impl Convertable for String {
-    fn to_raw<'q>(&'q self) -> &'q [u8] {
+    fn to_raw(&self) -> &[u8] {
         self.as_str().as_bytes()
     }
 
@@ -65,7 +65,7 @@ where
     pub fn get(&self, key: &K) -> Result<Option<V>> {
         let key = key.to_raw();
         let result = self.get_internal(key)?;
-        return result.map(|value| V::from_raw(&value)).transpose();
+        result.map(|value| V::from_raw(&value)).transpose()
     }
 
     fn get_internal(&self, key: &[u8]) -> Result<Option<Vec<u8>>> {
@@ -92,7 +92,7 @@ where
             None => {
                 let value = f()?;
                 let raw_value = V::to_raw(&value);
-                self.set_internal(key, &raw_value)?;
+                self.set_internal(key, raw_value)?;
                 value
             }
         };

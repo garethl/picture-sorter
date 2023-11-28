@@ -66,7 +66,7 @@ impl Picture {
     pub fn get(&self, key: &str) -> Option<String> {
         let value = if let Some(values) = MAPPINGS.get(&*key.to_lowercase()) {
             for value in values {
-                if let Some(value) = self.get_internal(*value) {
+                if let Some(value) = self.get_internal(value) {
                     return Some(value.to_string());
                 }
             }
@@ -75,12 +75,12 @@ impl Picture {
             self.get_internal(key)
         };
 
-        if None == value {
+        if value.is_none() {
             if let Some(generator) = GENERATORS.get(&*key.to_lowercase()) {
                 return generator(self);
             }
         }
-        return value.map(|i| i.to_string());
+        value.map(|i| i.to_string())
     }
 
     fn get_internal(&self, key: &str) -> Option<&String> {

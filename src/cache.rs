@@ -26,7 +26,7 @@ impl Cache {
         });
 
         match result {
-            Ok(serialized) => Ok(serde_json::from_str::<P>(&*serialized)?),
+            Ok(serialized) => Ok(serde_json::from_str::<P>(&serialized)?),
             Err(err) => Err(err),
         }
     }

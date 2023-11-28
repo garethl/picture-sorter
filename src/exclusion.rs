@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use log::debug;
 use regex::Regex;
 use std::ops::Add;
@@ -6,12 +6,12 @@ use std::ops::Add;
 pub fn build_exclusion_filter(exclusions: Vec<String>) -> impl Fn(&str) -> bool {
     let exclusions: Result<Vec<Regex>> = exclusions
         .into_iter()
-        .map(|exclusion| build_regex(exclusion))
+        .map(build_regex)
         .collect();
 
     let exclusions = exclusions.unwrap();
 
-    return move |d| exclusions.iter().any(|exclusion| exclusion.is_match(d));
+    move |d| exclusions.iter().any(|exclusion| exclusion.is_match(d))
 }
 
 fn build_regex(exclusion: String) -> Result<Regex> {
@@ -30,7 +30,7 @@ fn build_regex(exclusion: String) -> Result<Regex> {
                 }
             }
             '*' => {
-                if buffer.len() > 0 {
+                if !buffer.is_empty() {
                     result = result.add(&regex::escape(&buffer));
                     buffer.truncate(0);
                 }
@@ -45,7 +45,7 @@ fn build_regex(exclusion: String) -> Result<Regex> {
         }
     }
 
-    if buffer.len() > 0 {
+    if !buffer.is_empty() {
         result = result.add(&regex::escape(&buffer));
     }
 

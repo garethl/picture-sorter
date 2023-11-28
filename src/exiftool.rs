@@ -1,9 +1,9 @@
 // some code from https://github.com/alexipeck/exif, but this is using the json output, so
 //  has more reliable parsing.
 
-use anyhow::{anyhow, Context, Error, Result};
+use anyhow::{anyhow, Error, Result};
 use log::{debug, warn};
-use log4rs::append::file;
+
 use serde_json::{Map, Value};
 use std::{
     collections::HashMap,
@@ -63,9 +63,7 @@ impl Exif {
         };
 
         if !output.status.success() {
-            if let Err(err) = try_extract_exiftool_error(output.stdout, output.stderr) {
-                return Err(err);
-            }
+            try_extract_exiftool_error(output.stdout, output.stderr)?;
 
             return Err(anyhow!("Error extracting exif data: unknown error",));
         }
@@ -103,7 +101,7 @@ impl Exif {
     }
 
     pub fn execute(args: Vec<&OsStr>, stdout: Option<Stdio>) -> Result<()> {
-        let stdout = stdout.unwrap_or_else(|| Stdio::null());
+        let stdout = stdout.unwrap_or_else(Stdio::null);
 
         debug!("Executing exiftool with arguments: {:?}", args);
 
@@ -129,9 +127,7 @@ impl Exif {
         debug!("exiftool exit status is {}", &output.status);
 
         if !output.status.success() {
-            if let Err(err) = try_extract_exiftool_error(output.stdout, output.stderr) {
-                return Err(err);
-            }
+            try_extract_exiftool_error(output.stdout, output.stderr)?;
             return Err(anyhow!("Error executing exif tool: unknown error",));
         }
 
@@ -154,11 +150,11 @@ fn extract_map(value: &Value) -> Option<&Map<String, Value>> {
 }
 
 fn try_extract_exiftool_error(std_out: Vec<u8>, std_err: Vec<u8>) -> Result<(), Error> {
-    if std_err.len() > 0 {
-        return Err(anyhow!(
+    if !std_err.is_empty() {
+        Err(anyhow!(
             "Error executing exiftool: exiftool output: {}",
             String::from_utf8_lossy(&std_err)
-        ));
+        ))
     } else {
         // we have some json to parse
         let output = match String::from_utf8(std_out) {
@@ -175,17 +171,15 @@ fn try_extract_exiftool_error(std_out: Vec<u8>, std_err: Vec<u8>) -> Result<(), 
 
         match json {
             Value::Array(value) => {
-                if value.len() > 0 {
-                    if value[0].is_object() {
-                        let value = value[0].as_object().unwrap();
+                if !value.is_empty() && value[0].is_object() {
+                    let value = value[0].as_object().unwrap();
 
-                        if let Some(value) = value.get("Error") {
-                            if value.is_string() {
-                                return Err(anyhow!(
-                                    "Error executing exiftool: {}",
-                                    value.as_str().unwrap()
-                                ));
-                            }
+                    if let Some(value) = value.get("Error") {
+                        if value.is_string() {
+                            return Err(anyhow!(
+                                "Error executing exiftool: {}",
+                                value.as_str().unwrap()
+                            ));
                         }
                     }
                 }

@@ -31,7 +31,7 @@ fn main() -> Result<()> {
         error!("exiftool not available. Please ensure it is available in your path");
     }
 
-    let pool: exiftool_executor::ExifToolPool = new_pool()?;
+    let _pool: exiftool_executor::ExifToolPool = new_pool()?;
 
     let cache = Cache::new(args.cache_dir)?;
     let expression = Expression::new(&args.format);

@@ -92,19 +92,19 @@ impl ValueFunction {
 
 impl ValueFunction {
     fn new(expression: &Vec<char>) -> ValueFunction {
-        let colon_index = index_of_next(&expression, 0, ':');
+        let colon_index = index_of_next(expression, 0, ':');
         let mut format: Option<String> = None;
 
         let keys = match colon_index {
             None => expression
                 .split(|c| *c == ':')
-                .map(|c| String::from_iter(c))
+                .map(String::from_iter)
                 .collect(),
             Some(_) => {
                 format = Some(expression[(colon_index.unwrap() + 1)..].iter().collect());
                 expression[0..colon_index.unwrap()]
                     .split(|c| *c == '|')
-                    .map(|c| String::from_iter(c))
+                    .map(String::from_iter)
                     .collect()
             }
         };
@@ -138,7 +138,7 @@ fn extract_expressions(format: &str) -> Vec<ExpressionChunk> {
                     buffer.push('{');
                     continue;
                 } else {
-                    if buffer.len() > 0 {
+                    if !buffer.is_empty() {
                         expressions.push(ExpressionChunk::Literal(buffer.iter().collect()));
                         buffer.clear();
                     }
@@ -148,20 +148,18 @@ fn extract_expressions(format: &str) -> Vec<ExpressionChunk> {
             '}' => {
                 if state == State::Literal {
                     buffer.push(c)
+                } else if i + 1 < format.len() && format[i + 1] == '}' {
+                    // escaped
+                    i += 1;
+                    buffer.push('}');
+                    buffer.push('}');
+                    continue;
                 } else {
-                    if i + 1 < format.len() && format[i + 1] == '}' {
-                        // escaped
-                        i += 1;
-                        buffer.push('}');
-                        buffer.push('}');
-                        continue;
-                    } else {
-                        if buffer.len() > 0 {
-                            expressions.push(ExpressionChunk::Value(ValueFunction::new(&buffer)));
-                            buffer.clear();
-                        }
-                        state = State::Literal;
+                    if !buffer.is_empty() {
+                        expressions.push(ExpressionChunk::Value(ValueFunction::new(&buffer)));
+                        buffer.clear();
                     }
+                    state = State::Literal;
                 }
             }
             _ => {
@@ -175,7 +173,7 @@ fn extract_expressions(format: &str) -> Vec<ExpressionChunk> {
         }
     }
 
-    if buffer.len() > 0 {
+    if !buffer.is_empty() {
         match state {
             State::Literal => expressions.push(ExpressionChunk::Literal(buffer.iter().collect())),
             State::Expression => {

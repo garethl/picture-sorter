@@ -24,7 +24,7 @@ trait SpecialHandler: Sync {
 lazy_static! {
     static ref SPECIAL_HANDLERS: Vec<Box<dyn SpecialHandler + 'static>> = {
         let mut m: Vec<Box<dyn SpecialHandler + 'static>> = Vec::new();
-        m.push(Box::new(MotionPhoto::default()));
+        m.push(Box::<MotionPhoto>::default());
         m
     };
 }

@@ -1,5 +1,5 @@
 use anyhow::Result;
-use chrono::{DateTime, Local, NaiveDateTime, TimeZone, Utc};
+use chrono::{DateTime, Local, NaiveDateTime, Utc};
 use dateparser::parse;
 use interim::{parse_date_string, Dialect};
 use lazy_static::lazy_static;
@@ -21,7 +21,7 @@ pub fn format(format: &str, value: &str) -> Result<String> {
 
 fn try_parse_date_time(value: &str) -> Option<DateTime<Utc>> {
     // start with dateparser, which can recognise a lot
-    if let Some(value) = parse(value).ok() {
+    if let Ok(value) = parse(value) {
         return Some(value);
     }
 
@@ -39,7 +39,7 @@ fn try_parse_date_time(value: &str) -> Option<DateTime<Utc>> {
     }
 
     // try interim as the last resort
-    if let Some(value) = parse_date_string(value, Local::now(), Dialect::Uk).ok() {
+    if let Ok(value) = parse_date_string(value, Local::now(), Dialect::Uk) {
         return Some(DateTime::from(value));
     }
 

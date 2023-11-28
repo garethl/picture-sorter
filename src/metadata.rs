@@ -1,7 +1,7 @@
 use crate::exiftool::Exif;
 use anyhow::anyhow;
 use anyhow::Result;
-use log::debug;
+
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::HashMap;

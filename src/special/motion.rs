@@ -48,12 +48,12 @@ impl SpecialHandler for MotionPhoto {
         &self,
         picture: &Picture,
         destination: &Path,
-        destination_exists: bool,
+        _destination_exists: bool,
     ) -> Result<(), Error> {
         let mut temp_files = TempFileTracker::new();
 
         let temp_dir = env::temp_dir();
-        let temp_dir = destination.parent().unwrap_or_else(|| &temp_dir);
+        let temp_dir = destination.parent().unwrap_or(&temp_dir);
 
         let file_prefix = destination.file_stem().unwrap_or(OsStr::new(""));
         let motion_video_file = change_file_name_with_new_extension(destination, "_motion", "mp4");
@@ -85,8 +85,8 @@ impl SpecialHandler for MotionPhoto {
             None,
         )?;
 
-        rename(&temp_video_path, &motion_video_file)?;
-        rename(&temp_picture, &destination)?;
+        rename(&temp_video_path, motion_video_file)?;
+        rename(&temp_picture, destination)?;
 
         Ok(())
     }
@@ -117,7 +117,7 @@ fn picture_is_motion_photo(picture: &Picture) -> bool {
         return false;
     }
 
-    return true;
+    true
 }
 
 fn change_file_name_with_new_extension(path: &Path, suffix: &str, extension: &str) -> PathBuf {
@@ -125,7 +125,7 @@ fn change_file_name_with_new_extension(path: &Path, suffix: &str, extension: &st
 
     let mut name = path.file_stem().unwrap_or(OsStr::new("")).to_os_string();
     name.push(OsString::from(suffix));
-    if extension.len() > 0 {
+    if !extension.is_empty() {
         name.push(OsString::from("."));
         name.push(OsString::from(extension));
     }

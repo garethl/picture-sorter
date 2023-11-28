@@ -71,9 +71,9 @@ pub struct ExifToolManager {
 
 pub fn new_pool() -> Result<ExifToolPool, ExifToolError> {
     match Pool::builder(ExifToolManager {}).build() {
-        Ok(pool) => return Ok(ExifToolPool { inner: pool }),
+        Ok(pool) => Ok(ExifToolPool { inner: pool }),
         Err(err) => match err {
-            managed::BuildError::Backend(err) => return Err(err),
+            managed::BuildError::Backend(err) => Err(err),
             managed::BuildError::NoRuntimeSpecified(message) => {
                 Err(ExifToolError::InternalError(message))
             }
@@ -96,7 +96,7 @@ impl managed::Manager for ExifToolManager {
     /// # Errors
     ///
     /// Returns [`Manager::Error`] if the instance couldn't be recycled.
-    async fn recycle(&self, obj: &mut Self::Type) -> RecycleResult<Self::Error> {
+    async fn recycle(&self, _obj: &mut Self::Type) -> RecycleResult<Self::Error> {
         Ok(())
     }
 }
