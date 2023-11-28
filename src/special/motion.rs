@@ -4,6 +4,7 @@ use crate::exiftool::Exif;
 use crate::picture::Picture;
 use crate::temp::TempFileTracker;
 use anyhow::Error;
+
 use log::warn;
 use std::env;
 use std::ffi::OsStr;
@@ -15,6 +16,37 @@ use std::path::PathBuf;
 
 #[derive(Default)]
 pub struct MotionPhoto {}
+
+enum Mode {
+    Motion { is_heic: bool },
+    Embedded,
+}
+
+const KEY_MOTION_PHOTO_VIDEO: &str = "MotionPhotoVideo";
+const KEY_EMBEDDED_VIDEO_FILE: &str = "EmbeddedVideoFile";
+const KEY_EMBEDDED_VIDEO_FILE_TRAILER: &str = "trailer:all";
+
+impl Mode {
+    fn get_video_key_to_extract(&self) -> &'static str {
+        match self {
+            Mode::Motion { is_heic: _ } => KEY_MOTION_PHOTO_VIDEO,
+            Mode::Embedded => KEY_EMBEDDED_VIDEO_FILE,
+        }
+    }
+
+    fn get_video_key_to_strip(&self) -> &'static str {
+        match self {
+            Mode::Motion { is_heic } => {
+                if *is_heic {
+                    KEY_MOTION_PHOTO_VIDEO
+                } else {
+                    KEY_EMBEDDED_VIDEO_FILE_TRAILER
+                }
+            }
+            Mode::Embedded => KEY_EMBEDDED_VIDEO_FILE_TRAILER,
+        }
+    }
+}
 
 impl SpecialHandler for MotionPhoto {
     fn name(&self) -> &'static str {
@@ -58,6 +90,8 @@ impl SpecialHandler for MotionPhoto {
         let file_prefix = destination.file_stem().unwrap_or(OsStr::new(""));
         let motion_video_file = change_file_name_with_new_extension(destination, "_motion", "mp4");
 
+        let mode = get_mode(picture);
+
         // step 1: extract the video file
         let temp_video_path = temp_files.with_prefix_in(file_prefix, temp_dir);
         let temp_video = File::create(&temp_video_path)?;
@@ -65,7 +99,7 @@ impl SpecialHandler for MotionPhoto {
             vec![
                 OsStr::new("-m"),
                 OsStr::new("-b"),
-                OsStr::new("-MotionPhotoVideo"),
+                OsStr::new(&format!("-{}", mode.get_video_key_to_extract())),
                 adjust_canonicalization(&picture.path).as_os_str(),
             ],
             Some(temp_video.into()),
@@ -73,13 +107,14 @@ impl SpecialHandler for MotionPhoto {
 
         // step 2: copy the file using exiftool, and remove the baked in video file
         let temp_picture = temp_files.with_prefix_in(file_prefix, temp_dir);
+
         Exif::execute(
             vec![
                 OsStr::new("-m"),
                 OsStr::new("-U"),
                 OsStr::new("-o"),
                 adjust_canonicalization(&temp_picture).as_os_str(),
-                OsStr::new("-MotionPhotoVideo="),
+                OsStr::new(&format!("-{}=", mode.get_video_key_to_strip())),
                 adjust_canonicalization(&picture.path).as_os_str(),
             ],
             None,
@@ -90,6 +125,19 @@ impl SpecialHandler for MotionPhoto {
 
         Ok(())
     }
+}
+
+fn get_mode(picture: &Picture) -> Mode {
+    if picture.metadata.get("motionphotovideo").is_some() {
+        if let Some(mime) = picture.metadata.get("mimetype") {
+            return Mode::Motion {
+                is_heic: mime == "image/heic",
+            };
+        }
+        return Mode::Motion { is_heic: false };
+    }
+
+    Mode::Embedded
 }
 
 fn picture_is_motion_photo(picture: &Picture) -> bool {
@@ -112,6 +160,7 @@ fn picture_is_motion_photo(picture: &Picture) -> bool {
     let has_binary_video = picture
         .metadata
         .get("motionphotovideo")
+        .or_else(|| picture.metadata.get("embeddedvideofile"))
         .is_some_and(|v| v.contains("Binary data"));
     if !has_binary_video {
         return false;

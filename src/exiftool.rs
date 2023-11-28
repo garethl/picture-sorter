@@ -129,6 +129,10 @@ impl Exif {
         if !output.status.success() {
             try_extract_exiftool_error(output.stdout, output.stderr)?;
             return Err(anyhow!("Error executing exif tool: unknown error",));
+        } else if !output.stderr.is_empty() {
+            if let Ok(err) = String::from_utf8(output.stderr) {
+                warn!("Warnings from exiftool: {}", err);
+            }
         }
 
         Ok(())
