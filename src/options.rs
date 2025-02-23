@@ -24,9 +24,9 @@ pub struct Options {
     #[clap(short, long, value_parser)]
     pub format: String,
 
-    /// Cache directory
+    /// Cache file
     #[clap(short, long, value_parser)]
-    pub cache_dir: String,
+    pub cache_file: String,
 
     /// Exclude files matching pattern (* is a wildcard)
     #[clap(short, long, value_parser, num_args = 1.., value_delimiter = ' ')]

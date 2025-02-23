@@ -9,9 +9,9 @@ pub struct Cache {
 }
 
 impl Cache {
-    pub fn new(cache_dir: String) -> Result<Self> {
+    pub fn new(cache_path: String) -> Result<Self> {
         Ok(Cache {
-            store: KVStore::new(&cache_dir)?,
+            store: KVStore::new(&cache_path)?,
         })
     }
 

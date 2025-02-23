@@ -3,7 +3,7 @@
 use std::ops::Add;
 use std::path;
 
-use crate::format::format;
+use crate::date_time_format::format;
 use crate::picture::Picture;
 use anyhow::anyhow;
 use anyhow::Result;
@@ -15,6 +15,7 @@ lazy_static! {
     static ref PATH_SEPARATOR: String = path::MAIN_SEPARATOR.to_string();
 }
 
+/// An expression that can execute against a Picture object, and return some string value
 #[derive(Debug)]
 pub struct Expression {
     expressions: Vec<ExpressionChunk>,
@@ -46,7 +47,7 @@ impl Expression {
 #[derive(Debug, PartialEq)]
 enum ExpressionChunk {
     Literal(String),
-    Value(ValueFunction),
+    Value(ValueExtraction),
 }
 
 impl ExpressionChunk {
@@ -59,12 +60,33 @@ impl ExpressionChunk {
 }
 
 #[derive(Debug, PartialEq)]
-struct ValueFunction {
+struct ValueExtraction {
     keys: Vec<String>,
     format: Option<String>,
 }
 
-impl ValueFunction {
+impl ValueExtraction {
+    fn new(expression: &Vec<char>) -> ValueExtraction {
+        let colon_index = index_of_next(expression, 0, ':');
+        let mut format: Option<String> = None;
+
+        let keys = match colon_index {
+            None => expression
+                .split(|c| *c == ':')
+                .map(String::from_iter)
+                .collect(),
+            Some(ix) => {
+                format = Some(expression[(ix + 1)..].iter().collect());
+                expression[0..ix]
+                    .split(|c| *c == '|')
+                    .map(String::from_iter)
+                    .collect()
+            }
+        };
+
+        ValueExtraction { keys, format }
+    }
+
     fn execute(&self, picture: &Picture) -> Result<String> {
         let value = self.get_value_internal(picture)?;
 
@@ -87,29 +109,6 @@ impl ValueFunction {
             Some(format_string) => format(format_string, &value),
             None => Ok(value),
         }
-    }
-}
-
-impl ValueFunction {
-    fn new(expression: &Vec<char>) -> ValueFunction {
-        let colon_index = index_of_next(expression, 0, ':');
-        let mut format: Option<String> = None;
-
-        let keys = match colon_index {
-            None => expression
-                .split(|c| *c == ':')
-                .map(String::from_iter)
-                .collect(),
-            Some(_) => {
-                format = Some(expression[(colon_index.unwrap() + 1)..].iter().collect());
-                expression[0..colon_index.unwrap()]
-                    .split(|c| *c == '|')
-                    .map(String::from_iter)
-                    .collect()
-            }
-        };
-
-        ValueFunction { keys, format }
     }
 }
 
@@ -156,7 +155,7 @@ fn extract_expressions(format: &str) -> Vec<ExpressionChunk> {
                     continue;
                 } else {
                     if !buffer.is_empty() {
-                        expressions.push(ExpressionChunk::Value(ValueFunction::new(&buffer)));
+                        expressions.push(ExpressionChunk::Value(ValueExtraction::new(&buffer)));
                         buffer.clear();
                     }
                     state = State::Literal;
@@ -177,7 +176,7 @@ fn extract_expressions(format: &str) -> Vec<ExpressionChunk> {
         match state {
             State::Literal => expressions.push(ExpressionChunk::Literal(buffer.iter().collect())),
             State::Expression => {
-                expressions.push(ExpressionChunk::Value(ValueFunction::new(&buffer)))
+                expressions.push(ExpressionChunk::Value(ValueExtraction::new(&buffer)))
             }
         }
     }
@@ -216,7 +215,7 @@ mod test {
         let formatter = Expression::new("{test}");
         println!("{:?}", formatter);
         assert_eq!(
-            vec![ExpressionChunk::Value(ValueFunction {
+            vec![ExpressionChunk::Value(ValueExtraction {
                 format: None,
                 keys: vec!["test".to_string()]
             })],
@@ -230,12 +229,12 @@ mod test {
         println!("{:?}", formatter);
         assert_eq!(
             vec![
-                ExpressionChunk::Value(ValueFunction {
+                ExpressionChunk::Value(ValueExtraction {
                     format: None,
                     keys: vec!["test".to_string()]
                 }),
                 ExpressionChunk::Literal("/and/".to_string()),
-                ExpressionChunk::Value(ValueFunction {
+                ExpressionChunk::Value(ValueExtraction {
                     format: None,
                     keys: vec!["test".to_string()]
                 })
@@ -251,7 +250,7 @@ mod test {
         assert_eq!(
             vec![
                 ExpressionChunk::Literal("test/".to_string()),
-                ExpressionChunk::Value(ValueFunction {
+                ExpressionChunk::Value(ValueExtraction {
                     format: None,
                     keys: vec!["and".to_string()]
                 }),
@@ -267,15 +266,15 @@ mod test {
         println!("{:?}", formatter);
         assert_eq!(
             vec![
-                ExpressionChunk::Value(ValueFunction {
+                ExpressionChunk::Value(ValueExtraction {
                     format: None,
                     keys: vec!["test".to_string()]
                 }),
-                ExpressionChunk::Value(ValueFunction {
+                ExpressionChunk::Value(ValueExtraction {
                     format: None,
                     keys: vec!["and".to_string()]
                 }),
-                ExpressionChunk::Value(ValueFunction {
+                ExpressionChunk::Value(ValueExtraction {
                     format: None,
                     keys: vec!["test2".to_string()]
                 }),
@@ -289,14 +288,34 @@ mod test {
         println!("{:?}", formatter);
         assert_eq!(
             vec![
-                ExpressionChunk::Value(ValueFunction {
+                ExpressionChunk::Value(ValueExtraction {
                     format: Some("%Y".to_string()),
                     keys: vec!["test".to_string()]
                 }),
                 ExpressionChunk::Literal("/".to_string()),
-                ExpressionChunk::Value(ValueFunction {
+                ExpressionChunk::Value(ValueExtraction {
                     format: Some("%Y-%M".to_string()),
                     keys: vec!["test2".to_string()]
+                }),
+            ],
+            formatter.expressions
+        );
+    }
+
+    #[test]
+    fn multiple_options() {
+        let formatter = Expression::new("{test|test2|test3:%Y}/{test_next:%Y-%M}");
+        println!("{:?}", formatter);
+        assert_eq!(
+            vec![
+                ExpressionChunk::Value(ValueExtraction {
+                    format: Some("%Y".to_string()),
+                    keys: vec!["test".to_string(), "test2".to_string(), "test3".to_string()]
+                }),
+                ExpressionChunk::Literal("/".to_string()),
+                ExpressionChunk::Value(ValueExtraction {
+                    format: Some("%Y-%M".to_string()),
+                    keys: vec!["test_next".to_string()]
                 }),
             ],
             formatter.expressions

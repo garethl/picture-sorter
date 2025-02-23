@@ -3,15 +3,14 @@ use crate::options::Options;
 use crate::{cache::Cache, exiftool_executor::new_pool};
 use anyhow::Result;
 use clap::Parser;
-use log::{debug, error};
 use std::process::exit;
 
 mod cache;
+mod date_time_format;
 mod exclusion;
 mod exiftool;
 mod exiftool_executor;
 mod expression;
-mod format;
 mod kv_store;
 mod logging;
 mod metadata;
@@ -28,15 +27,16 @@ fn main() -> Result<()> {
     log::debug!("Options: {:?}", &args);
 
     if !exiftool::exiftool_available() {
-        error!("exiftool not available. Please ensure it is available in your path");
+        log::error!("exiftool not available. Please ensure it is available in your path");
     }
 
     let _pool: exiftool_executor::ExifToolPool = new_pool()?;
 
-    let cache = Cache::new(args.cache_dir)?;
-    let expression = Expression::new(&args.format);
+    let cache = Cache::new(args.cache_file)?;
+    log::debug!("Cache initialized");
 
-    log::info!("Cache initialized");
+    let expression = Expression::new(&args.format);
+    log::debug!("Format expression parsed as {:?}", &expression);
 
     match sorter::sort(
         cache,
@@ -49,11 +49,11 @@ fn main() -> Result<()> {
         args.dry_run,
     ) {
         Ok(_) => {
-            debug!("Finished");
+            log::debug!("Finished");
             Ok(())
         }
         Err(err) => {
-            error!("Fatal error: {}", err);
+            log::error!("Fatal error: {}", err);
             exit(1);
         }
     }
