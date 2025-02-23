@@ -5,7 +5,7 @@ use std::{
 };
 
 use log::warn;
-use rand::distributions::{Alphanumeric, DistString};
+use rand::distr::{Alphanumeric, SampleString};
 
 pub struct TempFileTracker {
     paths: Vec<PathBuf>,
@@ -29,7 +29,7 @@ impl TempFileTracker {
 }
 
 fn generate_random_name(length: usize) -> String {
-    Alphanumeric.sample_string(&mut rand::thread_rng(), length) + ".temp"
+    Alphanumeric.sample_string(&mut rand::rng(), length) + ".temp"
 }
 
 impl Drop for TempFileTracker {
