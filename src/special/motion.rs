@@ -1,6 +1,7 @@
 use super::SpecialHandler;
 use crate::exiftool::adjust_canonicalization;
 use crate::exiftool::Exif;
+use crate::options::SortMode;
 use crate::picture::Picture;
 use crate::temp::TempFileTracker;
 use anyhow::Error;
@@ -9,6 +10,7 @@ use log::warn;
 use std::env;
 use std::ffi::OsStr;
 use std::ffi::OsString;
+use std::fs::remove_file;
 use std::fs::rename;
 use std::fs::File;
 use std::path::Path;
@@ -17,7 +19,7 @@ use std::path::PathBuf;
 #[derive(Default)]
 pub struct MotionPhoto {}
 
-enum Mode {
+enum MotionMode {
     Motion { is_heic: bool },
     Embedded,
 }
@@ -26,24 +28,24 @@ const KEY_MOTION_PHOTO_VIDEO: &str = "MotionPhotoVideo";
 const KEY_EMBEDDED_VIDEO_FILE: &str = "EmbeddedVideoFile";
 const KEY_EMBEDDED_VIDEO_FILE_TRAILER: &str = "trailer:all";
 
-impl Mode {
+impl MotionMode {
     fn get_video_key_to_extract(&self) -> &'static str {
         match self {
-            Mode::Motion { is_heic: _ } => KEY_MOTION_PHOTO_VIDEO,
-            Mode::Embedded => KEY_EMBEDDED_VIDEO_FILE,
+            MotionMode::Motion { is_heic: _ } => KEY_MOTION_PHOTO_VIDEO,
+            MotionMode::Embedded => KEY_EMBEDDED_VIDEO_FILE,
         }
     }
 
     fn get_video_key_to_strip(&self) -> &'static str {
         match self {
-            Mode::Motion { is_heic } => {
+            MotionMode::Motion { is_heic } => {
                 if *is_heic {
                     KEY_MOTION_PHOTO_VIDEO
                 } else {
                     KEY_EMBEDDED_VIDEO_FILE_TRAILER
                 }
             }
-            Mode::Embedded => KEY_EMBEDDED_VIDEO_FILE_TRAILER,
+            MotionMode::Embedded => KEY_EMBEDDED_VIDEO_FILE_TRAILER,
         }
     }
 }
@@ -53,8 +55,15 @@ impl SpecialHandler for MotionPhoto {
         "Motion Photo v1"
     }
 
-    fn can_handle(&self, picture: &Picture, destination: &Path, destination_exists: bool) -> bool {
-        if destination_exists {
+    fn can_handle(
+        &self,
+        picture: &Picture,
+        destination: &Path,
+        destination_exists: bool,
+        overwrite: bool,
+        _mode: &SortMode,
+    ) -> bool {
+        if !overwrite && destination_exists {
             return false;
         }
 
@@ -62,7 +71,7 @@ impl SpecialHandler for MotionPhoto {
             let motion_video_file =
                 change_file_name_with_new_extension(destination, "_motion", "mp4");
 
-            if motion_video_file.exists() {
+            if !overwrite && motion_video_file.exists() {
                 warn!(
                     "Not processing {}, the extracted motion file already exists.",
                     picture.short_path
@@ -81,6 +90,8 @@ impl SpecialHandler for MotionPhoto {
         picture: &Picture,
         destination: &Path,
         _destination_exists: bool,
+        _overwrite: bool,
+        mode: &SortMode,
     ) -> Result<(), Error> {
         let mut temp_files = TempFileTracker::new();
 
@@ -90,7 +101,7 @@ impl SpecialHandler for MotionPhoto {
         let file_prefix = destination.file_stem().unwrap_or(OsStr::new(""));
         let motion_video_file = change_file_name_with_new_extension(destination, "_motion", "mp4");
 
-        let mode = get_mode(picture);
+        let motion_mode = get_motion_mode(picture);
 
         // step 1: extract the video file
         let temp_video_path = temp_files.with_prefix_in(file_prefix, temp_dir);
@@ -99,7 +110,7 @@ impl SpecialHandler for MotionPhoto {
             vec![
                 OsStr::new("-m"),
                 OsStr::new("-b"),
-                OsStr::new(&format!("-{}", mode.get_video_key_to_extract())),
+                OsStr::new(&format!("-{}", motion_mode.get_video_key_to_extract())),
                 adjust_canonicalization(&picture.path).as_os_str(),
             ],
             Some(temp_video.into()),
@@ -114,7 +125,7 @@ impl SpecialHandler for MotionPhoto {
                 OsStr::new("-U"),
                 OsStr::new("-o"),
                 adjust_canonicalization(&temp_picture).as_os_str(),
-                OsStr::new(&format!("-{}=", mode.get_video_key_to_strip())),
+                OsStr::new(&format!("-{}=", motion_mode.get_video_key_to_strip())),
                 adjust_canonicalization(&picture.path).as_os_str(),
             ],
             None,
@@ -123,21 +134,35 @@ impl SpecialHandler for MotionPhoto {
         rename(&temp_video_path, motion_video_file)?;
         rename(&temp_picture, destination)?;
 
+        match mode {
+            SortMode::Copy => {
+                // we've extracted both files, so nothing else to do
+            }
+            SortMode::Move => {
+                // we've extracted both files, so should delete the original
+                remove_file(&picture.path)?;
+            }
+            SortMode::HardLink => {
+                // since this special handler writes different source files,
+                //  hardlinking isn't an option
+            }
+        }
+
         Ok(())
     }
 }
 
-fn get_mode(picture: &Picture) -> Mode {
+fn get_motion_mode(picture: &Picture) -> MotionMode {
     if picture.metadata.get("motionphotovideo").is_some() {
         if let Some(mime) = picture.metadata.get("mimetype") {
-            return Mode::Motion {
+            return MotionMode::Motion {
                 is_heic: mime == "image/heic",
             };
         }
-        return Mode::Motion { is_heic: false };
+        return MotionMode::Motion { is_heic: false };
     }
 
-    Mode::Embedded
+    MotionMode::Embedded
 }
 
 fn picture_is_motion_photo(picture: &Picture) -> bool {

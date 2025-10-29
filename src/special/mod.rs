@@ -1,3 +1,4 @@
+use crate::options::SortMode;
 use crate::picture::Picture;
 use crate::special::motion::MotionPhoto;
 use anyhow::anyhow;
@@ -11,13 +12,22 @@ mod motion;
 trait SpecialHandler: Sync {
     fn name(&self) -> &'static str;
 
-    fn can_handle(&self, picture: &Picture, destination: &Path, destination_exists: bool) -> bool;
+    fn can_handle(
+        &self,
+        picture: &Picture,
+        destination: &Path,
+        destination_exists: bool,
+        overwrite: bool,
+        mode: &SortMode,
+    ) -> bool;
 
     fn handle(
         &self,
         picture: &Picture,
         destination: &Path,
         destination_exists: bool,
+        overwrite: bool,
+        mode: &SortMode,
     ) -> Result<(), Error>;
 }
 
@@ -35,9 +45,11 @@ pub fn execute_special_handlers(
     picture: &Picture,
     destination: &Path,
     destination_exists: bool,
+    overwrite: bool,
+    mode: &SortMode,
 ) -> Result<bool, Error> {
     for handler in SPECIAL_HANDLERS.iter() {
-        if handler.can_handle(picture, destination, destination_exists) {
+        if handler.can_handle(picture, destination, destination_exists, overwrite, mode) {
             if !dry_run {
                 debug!(
                     "{}Special handler {} handling {}",
@@ -46,7 +58,7 @@ pub fn execute_special_handlers(
                     picture.short_path
                 );
                 return handler
-                    .handle(picture, destination, destination_exists)
+                    .handle(picture, destination, destination_exists, overwrite, mode)
                     .map_err(|err| anyhow!("{}: {}", handler.name(), err))
                     .map(|_| true);
             } else {

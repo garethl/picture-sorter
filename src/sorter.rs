@@ -1,4 +1,5 @@
 use crate::exclusion::build_exclusion_filter;
+use crate::options::SortMode;
 use crate::picture::Picture;
 use crate::special::execute_special_handlers;
 use crate::{Cache, Expression};
@@ -15,7 +16,7 @@ pub fn sort(
     source: String,
     destination: String,
     exclusions: Vec<String>,
-    use_hard_links: bool,
+    mode: SortMode,
     overwrite: bool,
     dry_run: bool,
 ) -> Result<(), Error> {
@@ -81,7 +82,7 @@ pub fn sort(
             &expression,
             &destination,
             picture,
-            use_hard_links,
+            &mode,
             overwrite,
             dry_run,
         )?;
@@ -94,7 +95,7 @@ fn process_picture(
     expression: &Expression,
     destination: &str,
     picture: Picture,
-    use_hard_links: bool,
+    mode: &SortMode,
     overwrite: bool,
     dry_run: bool,
 ) -> anyhow::Result<()> {
@@ -106,8 +107,9 @@ fn process_picture(
             let destination = Path::new(destination).join(name);
 
             debug!(
-                "{}Going to copy {} to {}",
+                "{}Going to {} {} to {}",
                 dry_run_prefix,
+                mode,
                 picture.short_path,
                 destination.display()
             );
@@ -127,7 +129,8 @@ fn process_picture(
 
             let destination_exists = destination.exists();
 
-            match execute_special_handlers(dry_run, dry_run_prefix, &picture, &destination, destination_exists) {
+            let special_handler_outcome = execute_special_handlers(dry_run, dry_run_prefix, &picture, &destination, destination_exists, overwrite, mode);
+            match special_handler_outcome {
                 Ok(processed) => {
                     if processed {
                         return Ok(())
@@ -167,33 +170,51 @@ fn process_picture(
                 return Ok(());
             }
 
-            if use_hard_links {
-                if !dry_run {
-                    std::fs::hard_link(path, &destination).with_context(|| {
-                        format!(
-                            "Error creating hard-link from {} to {}",
-                            &path,
-                            &destination.display()
-                        )
-                    })?;
-                }
-                info!(
-                    "{}hard-linked {} to {}",
-                    dry_run_prefix,
-                    picture.short_path,
-                    destination.display()
-                )
-            } else {
-                if !dry_run {
-                    std::fs::copy(path, &destination).with_context(|| {
-                        format!("Error copying {} to {}", &path, &destination.display())
-                    })?;
-                }
-                info!("{}copied {} to {}", 
-                    dry_run_prefix,
-                    picture.short_path, 
-                    destination.display()
-                )
+            match mode {
+                SortMode::Copy => {
+                    if !dry_run {
+                        std::fs::copy(path, &destination).with_context(|| {
+                            format!("Error copying {} to {}", &path, &destination.display())
+                        })?;
+                    }
+                    info!("{}copied {} to {}", 
+                        dry_run_prefix,
+                        picture.short_path, 
+                        destination.display()
+                    )
+                },
+                SortMode::Move => {
+                    if !dry_run {
+                        std::fs::copy(path, &destination).with_context(|| {
+                            format!("Error copying {} to {}", &path, &destination.display())
+                        })?;
+                        std::fs::remove_file(path).with_context(|| {
+                            format!("Error removing file at {} (already copied to {})", &path, &destination.display())
+                        })?;
+                    }
+                    info!("{}moved {} to {}", 
+                        dry_run_prefix,
+                        picture.short_path, 
+                        destination.display()
+                    )
+                },
+                SortMode::HardLink => {
+                    if !dry_run {
+                        std::fs::hard_link(path, &destination).with_context(|| {
+                            format!(
+                                "Error creating hard-link from {} to {}",
+                                &path,
+                                &destination.display()
+                            )
+                        })?;
+                    }
+                    info!(
+                        "{}hard-linked {} to {}",
+                        dry_run_prefix,
+                        picture.short_path,
+                        destination.display()
+                    )
+                },
             }
         }
         Err(err) => warn!(

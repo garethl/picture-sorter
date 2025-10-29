@@ -42,7 +42,7 @@ fn main() -> Result<()> {
         args.source,
         args.destination,
         args.exclude,
-        args.use_hard_links,
+        args.mode,
         args.overwrite,
         args.dry_run,
     ) {

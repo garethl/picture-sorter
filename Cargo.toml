@@ -26,3 +26,7 @@ r2d2 = "0.8.10"
 deadpool = "0.12.2"
 thiserror = "2.0.11"
 rand = "0.9.0"
+assert_cmd = "2.0.16"
+
+[dev-dependencies]
+assert_cmd = { version = "2.0.16", features = ["color", "color-auto"] }
