@@ -1,5 +1,6 @@
-use crate::metadata::{get_metadata, ExifMetadata};
 use crate::Cache;
+use crate::app_state::AppState;
+use crate::metadata::{ExifMetadata, get_metadata};
 use lazy_static::lazy_static;
 use regex::Regex;
 use std::collections::HashMap;
@@ -104,18 +105,20 @@ impl Display for PictureError {
 impl Error for PictureError {}
 
 impl Picture {
-    pub fn from_dir_entry(
+    pub async fn from_dir_entry(
         source_path: &str,
         dir_entry: DirEntry,
-        cache: Cache,
+        state: AppState,
     ) -> Result<Picture, PictureError> {
         let path = dir_entry.path();
         let path_string = path.to_str().unwrap();
 
         let short_path: String = path_string.chars().skip(source_path.len() + 1).collect();
 
-        let metadata = cache
-            .get(path_string, || get_metadata(path))
+        let metadata = state
+            .cache
+            .get_async(path_string, || get_metadata(state.exif, path))
+            .await
             .map_err(|err| PictureError {
                 short_path: short_path.clone(),
                 dir_entry: dir_entry.clone(),

@@ -1,18 +1,21 @@
 use super::SpecialHandler;
+use crate::app_state::AppState;
 use crate::exiftool::adjust_canonicalization;
-use crate::exiftool::Exif;
 use crate::options::SortMode;
 use crate::picture::Picture;
 use crate::temp::TempFileTracker;
 use anyhow::Error;
 
+use async_trait::async_trait;
+use log::info;
 use log::warn;
 use std::env;
 use std::ffi::OsStr;
 use std::ffi::OsString;
+use std::fs::File;
 use std::fs::remove_file;
 use std::fs::rename;
-use std::fs::File;
+use std::io::Write;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -50,6 +53,7 @@ impl MotionMode {
     }
 }
 
+#[async_trait]
 impl SpecialHandler for MotionPhoto {
     fn name(&self) -> &'static str {
         "Motion Photo v1"
@@ -57,6 +61,7 @@ impl SpecialHandler for MotionPhoto {
 
     fn can_handle(
         &self,
+        _state: AppState,
         picture: &Picture,
         destination: &Path,
         destination_exists: bool,
@@ -85,8 +90,9 @@ impl SpecialHandler for MotionPhoto {
         false
     }
 
-    fn handle(
+    async fn handle(
         &self,
+        state: AppState,
         picture: &Picture,
         destination: &Path,
         _destination_exists: bool,
@@ -105,31 +111,38 @@ impl SpecialHandler for MotionPhoto {
 
         // step 1: extract the video file
         let temp_video_path = temp_files.with_prefix_in(file_prefix, temp_dir);
-        let temp_video = File::create(&temp_video_path)?;
-        Exif::execute(
-            vec![
-                OsStr::new("-m"),
-                OsStr::new("-b"),
-                OsStr::new(&format!("-{}", motion_mode.get_video_key_to_extract())),
-                adjust_canonicalization(&picture.path).as_os_str(),
-            ],
-            Some(temp_video.into()),
-        )?;
+        let mut temp_video = File::create(&temp_video_path)?;
+
+        let bytes = state
+            .exif
+            .execute_bytes(vec![
+                "-m",
+                "-b",
+                &format!("-{}", motion_mode.get_video_key_to_extract()),
+                &adjust_canonicalization(&picture.path),
+            ])
+            .await?;
+        temp_video.write_all(&bytes)?;
+        drop(temp_video);
+
+        info!("Extracted video to {:?}", &temp_video_path);
 
         // step 2: copy the file using exiftool, and remove the baked in video file
         let temp_picture = temp_files.with_prefix_in(file_prefix, temp_dir);
 
-        Exif::execute(
-            vec![
-                OsStr::new("-m"),
-                OsStr::new("-U"),
-                OsStr::new("-o"),
-                adjust_canonicalization(&temp_picture).as_os_str(),
-                OsStr::new(&format!("-{}=", motion_mode.get_video_key_to_strip())),
-                adjust_canonicalization(&picture.path).as_os_str(),
-            ],
-            None,
-        )?;
+        state
+            .exif
+            .execute_bytes(vec![
+                "-m",
+                "-U",
+                "-o",
+                &adjust_canonicalization(&temp_picture),
+                &format!("-{}=", motion_mode.get_video_key_to_strip()),
+                &adjust_canonicalization(&picture.path),
+            ])
+            .await?;
+
+        info!("Extracted picture to {:?}", &temp_picture);
 
         rename(&temp_video_path, motion_video_file)?;
         rename(&temp_picture, destination)?;

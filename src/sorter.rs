@@ -1,33 +1,25 @@
+use crate::app_state::AppState;
 use crate::exclusion::build_exclusion_filter;
 use crate::options::SortMode;
 use crate::picture::Picture;
 use crate::special::execute_special_handlers;
-use crate::{Cache, Expression};
 use anyhow::{Context, Error};
-use dpc_pariter::IteratorExt;
-use log::{debug, info, warn};
+use futures::stream::{self, StreamExt};
+use log::{debug, error, info, warn};
 use std::fs::{create_dir_all, metadata};
 use std::path::Path;
-use walkdir::{DirEntry, WalkDir};
+use walkdir::WalkDir;
 
-pub fn sort(
-    cache: Cache,
-    expression: Expression,
-    source: String,
-    destination: String,
-    exclusions: Vec<String>,
-    mode: SortMode,
-    overwrite: bool,
-    dry_run: bool,
-) -> Result<(), Error> {
-    let exclusion_filter = build_exclusion_filter(exclusions);
-    debug!("Reading from {}", source);
+pub async fn sort(state: AppState) -> Result<(), Error> {
+    let options = state.options.clone();
+    let exclusion_filter = build_exclusion_filter(&options.exclude);
+    debug!("Reading from {}", options.source);
 
-    let source = Path::new(&source).canonicalize()?;
+    let source = Path::new(&options.source).canonicalize()?;
     let source_path = source.to_str().unwrap().to_string();
     let source_path2 = source.to_str().unwrap().to_string();
 
-    let pictures = WalkDir::new(source)
+    let files = WalkDir::new(source)
         .follow_links(true)
         .into_iter()
         .filter_entry(move |entry| !exclusion_filter(entry.path().to_str().unwrap()))
@@ -45,54 +37,64 @@ pub fn sort(
                 None
             }
         })
-        .filter(|e| e.file_type().is_file())
-        .parallel_map(move |entry: DirEntry| {
-            Picture::from_dir_entry(&source_path2, entry, cache.clone())
-        })
-        .parallel_map(move |result| {
-            let picture = match result {
-                Ok(file) => Some(file),
-                Err(err) => {
-                    warn!(
-                        "Error reading metadata for `{}`. Ignoring. {}",
-                        err.short_path, err.error
-                    );
-                    None
-                }
-            };
+        .filter(|e| e.file_type().is_file());
 
-            if let Some(picture) = picture {
-                if let Some(error) = picture.get("Error") {
-                    warn!(
-                        "Ignoring `{}`, cannot extract exif data because: `{}`",
-                        picture.short_path, error
-                    );
-                    None
-                } else {
-                    Some(picture)
-                }
-            } else {
+    let pictures = stream::iter(files).map(async |entry| {
+        let result = Picture::from_dir_entry(&source_path2, entry, state.clone()).await;
+        let picture = match result {
+            Ok(file) => Some(file),
+            Err(err) => {
+                warn!(
+                    "Error reading metadata for `{}`. Ignoring. {}",
+                    err.short_path, err.error
+                );
                 None
             }
-        })
-        .flatten();
+        };
 
-    for picture in pictures {
-        process_picture(
-            &expression,
-            &destination,
-            picture,
-            &mode,
-            overwrite,
-            dry_run,
-        )?;
-    }
+        if let Some(picture) = picture {
+            if let Some(error) = picture.get("Error") {
+                warn!(
+                    "Ignoring `{}`, cannot extract exif data because: `{}`",
+                    picture.short_path, error
+                );
+                None
+            } else {
+                Some(picture)
+            }
+        } else {
+            None
+        }
+    });
+
+    pictures
+        .filter_map(|result| async {
+            result.await.map(|picture| {
+                process_picture(
+                    state.clone(),
+                    &options.destination,
+                    picture,
+                    &options.mode,
+                    options.overwrite,
+                    options.dry_run,
+                )
+            })
+        })
+        .for_each_concurrent(5, |result| async {
+            match result.await {
+                Ok(_) => {}
+                Err(err) => {
+                    error!("Unexpected error processing picture: {}", err);
+                }
+            }
+        })
+        .await;
 
     Ok(())
 }
 
-fn process_picture(
-    expression: &Expression,
+async fn process_picture(
+    state: AppState,
     destination: &str,
     picture: Picture,
     mode: &SortMode,
@@ -101,7 +103,7 @@ fn process_picture(
 ) -> anyhow::Result<()> {
     debug!("Processing {}", &picture.short_path);
 
-    match expression.execute(&picture) {
+    match state.expression.execute(&picture) {
         Ok(name) => {
             let dry_run_prefix = if dry_run { "[dry-run] " } else { "" };
             let destination = Path::new(destination).join(name);
@@ -129,18 +131,27 @@ fn process_picture(
 
             let destination_exists = destination.exists();
 
-            let special_handler_outcome = execute_special_handlers(dry_run, dry_run_prefix, &picture, &destination, destination_exists, overwrite, mode);
+            let special_handler_outcome = execute_special_handlers(
+                state,
+                dry_run,
+                dry_run_prefix,
+                &picture,
+                &destination,
+                destination_exists,
+                overwrite,
+                mode,
+            )
+            .await;
             match special_handler_outcome {
                 Ok(processed) => {
                     if processed {
-                        return Ok(())
+                        return Ok(());
                     }
-                },
-                Err(err) =>  {
-                    warn!("{}Error processing {}. Special handler errored: {}",
-                        dry_run_prefix, 
-                        picture.short_path,
-                        err
+                }
+                Err(err) => {
+                    warn!(
+                        "{}Error processing {}. Special handler errored: {}",
+                        dry_run_prefix, picture.short_path, err
                     );
                     return Ok(());
                 }
@@ -153,8 +164,9 @@ fn process_picture(
             };
 
             if overwrite_required && !overwrite {
-                info!("{}Skipping {}. The destination ({}) already exists, is different, and overwrite flag not provided.",
-                    dry_run_prefix, 
+                info!(
+                    "{}Skipping {}. The destination ({}) already exists, is different, and overwrite flag not provided.",
+                    dry_run_prefix,
                     picture.short_path,
                     destination.display()
                 );
@@ -162,9 +174,10 @@ fn process_picture(
             }
 
             if !overwrite_required && destination_exists && !overwrite {
-                debug!("{}Skipping {}. The destination ({}) already exists, is the same, and overwrite flag not provided.", 
-                    dry_run_prefix, 
-                    picture.short_path, 
+                debug!(
+                    "{}Skipping {}. The destination ({}) already exists, is the same, and overwrite flag not provided.",
+                    dry_run_prefix,
+                    picture.short_path,
                     destination.display()
                 );
                 return Ok(());
@@ -177,27 +190,33 @@ fn process_picture(
                             format!("Error copying {} to {}", &path, &destination.display())
                         })?;
                     }
-                    info!("{}copied {} to {}", 
+                    info!(
+                        "{}copied {} to {}",
                         dry_run_prefix,
-                        picture.short_path, 
+                        picture.short_path,
                         destination.display()
                     )
-                },
+                }
                 SortMode::Move => {
                     if !dry_run {
                         std::fs::copy(path, &destination).with_context(|| {
                             format!("Error copying {} to {}", &path, &destination.display())
                         })?;
                         std::fs::remove_file(path).with_context(|| {
-                            format!("Error removing file at {} (already copied to {})", &path, &destination.display())
+                            format!(
+                                "Error removing file at {} (already copied to {})",
+                                &path,
+                                &destination.display()
+                            )
                         })?;
                     }
-                    info!("{}moved {} to {}", 
+                    info!(
+                        "{}moved {} to {}",
                         dry_run_prefix,
-                        picture.short_path, 
+                        picture.short_path,
                         destination.display()
                     )
-                },
+                }
                 SortMode::HardLink => {
                     if !dry_run {
                         std::fs::hard_link(path, &destination).with_context(|| {
@@ -214,7 +233,7 @@ fn process_picture(
                         picture.short_path,
                         destination.display()
                     )
-                },
+                }
             }
         }
         Err(err) => warn!(

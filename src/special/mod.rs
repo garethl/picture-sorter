@@ -1,19 +1,23 @@
+use crate::app_state::AppState;
 use crate::options::SortMode;
 use crate::picture::Picture;
 use crate::special::motion::MotionPhoto;
-use anyhow::anyhow;
 use anyhow::Error;
+use anyhow::anyhow;
+use async_trait::async_trait;
 use lazy_static::lazy_static;
 use log::{debug, info};
 use std::path::Path;
 
 mod motion;
 
+#[async_trait]
 trait SpecialHandler: Sync {
     fn name(&self) -> &'static str;
 
     fn can_handle(
         &self,
+        state: AppState,
         picture: &Picture,
         destination: &Path,
         destination_exists: bool,
@@ -21,8 +25,9 @@ trait SpecialHandler: Sync {
         mode: &SortMode,
     ) -> bool;
 
-    fn handle(
+    async fn handle(
         &self,
+        state: AppState,
         picture: &Picture,
         destination: &Path,
         destination_exists: bool,
@@ -39,7 +44,8 @@ lazy_static! {
     };
 }
 
-pub fn execute_special_handlers(
+pub async fn execute_special_handlers(
+    state: AppState,
     dry_run: bool,
     dry_run_prefix: &str,
     picture: &Picture,
@@ -49,7 +55,14 @@ pub fn execute_special_handlers(
     mode: &SortMode,
 ) -> Result<bool, Error> {
     for handler in SPECIAL_HANDLERS.iter() {
-        if handler.can_handle(picture, destination, destination_exists, overwrite, mode) {
+        if handler.can_handle(
+            state.clone(),
+            picture,
+            destination,
+            destination_exists,
+            overwrite,
+            mode,
+        ) {
             if !dry_run {
                 debug!(
                     "{}Special handler {} handling {}",
@@ -58,7 +71,15 @@ pub fn execute_special_handlers(
                     picture.short_path
                 );
                 return handler
-                    .handle(picture, destination, destination_exists, overwrite, mode)
+                    .handle(
+                        state,
+                        picture,
+                        destination,
+                        destination_exists,
+                        overwrite,
+                        mode,
+                    )
+                    .await
                     .map_err(|err| anyhow!("{}: {}", handler.name(), err))
                     .map(|_| true);
             } else {

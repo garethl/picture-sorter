@@ -100,6 +100,26 @@ where
         Ok(value)
     }
 
+    pub async fn get_or_async<Fut>(&self, key: &K, f: impl FnOnce() -> Fut) -> Result<V>
+    where
+        Fut: Future<Output = Result<V>>,
+    {
+        let key = key.to_raw();
+        let value = self.get_internal(key)?;
+
+        let value = match value {
+            Some(value) => V::from_raw(&value)?,
+            None => {
+                let value = f().await?;
+                let raw_value = V::to_raw(&value);
+                self.set_internal(key, raw_value)?;
+                value
+            }
+        };
+
+        Ok(value)
+    }
+
     pub fn set(&self, key: &K, value: &V) -> Result<()> {
         let key = key.to_raw();
         let value = value.to_raw();
