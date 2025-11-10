@@ -1,5 +1,5 @@
 use crate::exclusion::build_exclusion_filter;
-use crate::options::SortMode;
+use crate::options::{Options, SortMode};
 use crate::picture::Picture;
 use crate::special::execute_special_handlers;
 use crate::{Cache, Expression};
@@ -7,23 +7,18 @@ use anyhow::{Context, Error};
 use dpc_pariter::IteratorExt;
 use log::{debug, info, warn};
 use std::fs::{create_dir_all, metadata};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use walkdir::{DirEntry, WalkDir};
 
 pub fn sort(
     cache: Cache,
     expression: Expression,
-    source: String,
-    destination: String,
-    exclusions: Vec<String>,
-    mode: SortMode,
-    overwrite: bool,
-    dry_run: bool,
+    options: &Options,
 ) -> Result<(), Error> {
-    let exclusion_filter = build_exclusion_filter(exclusions);
-    debug!("Reading from {}", source);
+    let exclusion_filter = build_exclusion_filter(options.exclude.clone());
+    debug!("Reading from {}", options.source);
 
-    let source = Path::new(&source).canonicalize()?;
+    let source = Path::new(&options.source).canonicalize()?;
     let source_path = source.to_str().unwrap().to_string();
     let source_path2 = source.to_str().unwrap().to_string();
 
@@ -78,14 +73,7 @@ pub fn sort(
         .flatten();
 
     for picture in pictures {
-        process_picture(
-            &expression,
-            &destination,
-            picture,
-            &mode,
-            overwrite,
-            dry_run,
-        )?;
+        process_picture(&expression, picture, options)?;
     }
 
     Ok(())
@@ -93,23 +81,20 @@ pub fn sort(
 
 fn process_picture(
     expression: &Expression,
-    destination: &str,
     picture: Picture,
-    mode: &SortMode,
-    overwrite: bool,
-    dry_run: bool,
+    options: &Options,
 ) -> anyhow::Result<()> {
     debug!("Processing {}", &picture.short_path);
 
     match expression.execute(&picture) {
         Ok(name) => {
-            let dry_run_prefix = if dry_run { "[dry-run] " } else { "" };
-            let destination = Path::new(destination).join(name);
+            let dry_run_prefix = if options.dry_run { "[dry-run] " } else { "" };
+            let destination = Path::new(&options.destination).join(name);
 
             debug!(
                 "{}Going to {} {} to {}",
                 dry_run_prefix,
-                mode,
+                options.mode,
                 picture.short_path,
                 destination.display()
             );
@@ -122,25 +107,31 @@ fn process_picture(
                     dry_run_prefix,
                     destination_dir.display()
                 );
-                if !dry_run {
+                if !options.dry_run {
                     create_dir_all(destination_dir)?;
                 }
             }
 
             let destination_exists = destination.exists();
 
-            let special_handler_outcome = execute_special_handlers(dry_run, dry_run_prefix, &picture, &destination, destination_exists, overwrite, mode);
+            let special_handler_outcome = execute_special_handlers(
+                options,
+                dry_run_prefix,
+                &picture,
+                &destination,
+                destination_exists,
+                &options.mode,
+            );
             match special_handler_outcome {
                 Ok(processed) => {
                     if processed {
-                        return Ok(())
+                        return Ok(());
                     }
-                },
-                Err(err) =>  {
-                    warn!("{}Error processing {}. Special handler errored: {}",
-                        dry_run_prefix, 
-                        picture.short_path,
-                        err
+                }
+                Err(err) => {
+                    warn!(
+                        "{}Error processing {}. Special handler errored: {}",
+                        dry_run_prefix, picture.short_path, err
                     );
                     return Ok(());
                 }
@@ -152,70 +143,25 @@ fn process_picture(
                 false
             };
 
-            if overwrite_required && !overwrite {
+            if overwrite_required && !options.overwrite {
                 info!("{}Skipping {}. The destination ({}) already exists, is different, and overwrite flag not provided.",
-                    dry_run_prefix, 
+                    dry_run_prefix,
                     picture.short_path,
                     destination.display()
                 );
                 return Ok(());
             }
 
-            if !overwrite_required && destination_exists && !overwrite {
-                debug!("{}Skipping {}. The destination ({}) already exists, is the same, and overwrite flag not provided.", 
-                    dry_run_prefix, 
-                    picture.short_path, 
+            if !overwrite_required && destination_exists && !options.overwrite {
+                debug!("{}Skipping {}. The destination ({}) already exists, is the same, and overwrite flag not provided.",
+                    dry_run_prefix,
+                    picture.short_path,
                     destination.display()
                 );
                 return Ok(());
             }
 
-            match mode {
-                SortMode::Copy => {
-                    if !dry_run {
-                        std::fs::copy(path, &destination).with_context(|| {
-                            format!("Error copying {} to {}", &path, &destination.display())
-                        })?;
-                    }
-                    info!("{}copied {} to {}", 
-                        dry_run_prefix,
-                        picture.short_path, 
-                        destination.display()
-                    )
-                },
-                SortMode::Move => {
-                    if !dry_run {
-                        std::fs::copy(path, &destination).with_context(|| {
-                            format!("Error copying {} to {}", &path, &destination.display())
-                        })?;
-                        std::fs::remove_file(path).with_context(|| {
-                            format!("Error removing file at {} (already copied to {})", &path, &destination.display())
-                        })?;
-                    }
-                    info!("{}moved {} to {}", 
-                        dry_run_prefix,
-                        picture.short_path, 
-                        destination.display()
-                    )
-                },
-                SortMode::HardLink => {
-                    if !dry_run {
-                        std::fs::hard_link(path, &destination).with_context(|| {
-                            format!(
-                                "Error creating hard-link from {} to {}",
-                                &path,
-                                &destination.display()
-                            )
-                        })?;
-                    }
-                    info!(
-                        "{}hard-linked {} to {}",
-                        dry_run_prefix,
-                        picture.short_path,
-                        destination.display()
-                    )
-                },
-            }
+            sort_single_picture_file(&picture, &options.mode, options.dry_run, dry_run_prefix, &destination, path)?;
         }
         Err(err) => warn!(
             "Skipping {}, unable to apply name template due to `{}`.",
@@ -226,7 +172,69 @@ fn process_picture(
     Ok(())
 }
 
-fn are_files_different(path: &str, destination: &std::path::PathBuf) -> anyhow::Result<bool> {
+pub fn sort_single_picture_file(
+    picture: &Picture,
+    mode: &SortMode,
+    dry_run: bool,
+    dry_run_prefix: &str,
+    destination: &PathBuf,
+    path: &String,
+) -> Result<(), Error> {
+    Ok(match mode {
+        SortMode::Copy => {
+            if !dry_run {
+                std::fs::copy(path, destination).with_context(|| {
+                    format!("Error copying {} to {}", &path, destination.display())
+                })?;
+            }
+            info!(
+                "{}copied {} to {}",
+                dry_run_prefix,
+                picture.short_path,
+                destination.display()
+            )
+        }
+        SortMode::Move => {
+            if !dry_run {
+                std::fs::copy(path, destination).with_context(|| {
+                    format!("Error copying {} to {}", &path, destination.display())
+                })?;
+                std::fs::remove_file(path).with_context(|| {
+                    format!(
+                        "Error removing file at {} (already copied to {})",
+                        &path,
+                        &destination.display()
+                    )
+                })?;
+            }
+            info!(
+                "{}moved {} to {}",
+                dry_run_prefix,
+                picture.short_path,
+                destination.display()
+            )
+        }
+        SortMode::HardLink => {
+            if !dry_run {
+                std::fs::hard_link(path, destination).with_context(|| {
+                    format!(
+                        "Error creating hard-link from {} to {}",
+                        &path,
+                        destination.display()
+                    )
+                })?;
+            }
+            info!(
+                "{}hard-linked {} to {}",
+                dry_run_prefix,
+                picture.short_path,
+                destination.display()
+            )
+        }
+    })
+}
+
+fn are_files_different(path: &str, destination: &PathBuf) -> anyhow::Result<bool> {
     let source_metadata = metadata(path)?;
     let destination_metadata = metadata(destination)?;
 

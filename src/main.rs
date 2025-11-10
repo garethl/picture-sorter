@@ -30,22 +30,13 @@ fn main() -> Result<()> {
         log::error!("exiftool not available. Please ensure it is available in your path");
     }
 
-    let cache = Cache::new(args.cache_file)?;
+    let cache = Cache::new(args.cache_file.clone())?;
     log::debug!("Cache initialized");
 
     let expression = Expression::new(&args.format);
     log::debug!("Format expression parsed as {:?}", &expression);
 
-    match sorter::sort(
-        cache,
-        expression,
-        args.source,
-        args.destination,
-        args.exclude,
-        args.mode,
-        args.overwrite,
-        args.dry_run,
-    ) {
+    match sorter::sort(cache, expression, &args) {
         Ok(_) => {
             log::debug!("Finished");
             Ok(())

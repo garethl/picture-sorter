@@ -1,8 +1,9 @@
 use super::SpecialHandler;
 use crate::exiftool::adjust_canonicalization;
 use crate::exiftool::Exif;
-use crate::options::SortMode;
+use crate::options::{Options, SortMode};
 use crate::picture::Picture;
+use crate::sorter::sort_single_picture_file;
 use crate::temp::TempFileTracker;
 use anyhow::Error;
 
@@ -57,13 +58,17 @@ impl SpecialHandler for MotionPhoto {
 
     fn can_handle(
         &self,
+        options: &Options,
         picture: &Picture,
         destination: &Path,
         destination_exists: bool,
-        overwrite: bool,
         _mode: &SortMode,
     ) -> bool {
-        if !overwrite && destination_exists {
+        if !options.motion_extract && !options.motion_strip {
+            return false;
+        }
+
+        if !options.overwrite && destination_exists {
             return false;
         }
 
@@ -71,7 +76,7 @@ impl SpecialHandler for MotionPhoto {
             let motion_video_file =
                 change_file_name_with_new_extension(destination, "_motion", "mp4");
 
-            if !overwrite && motion_video_file.exists() {
+            if options.motion_extract && !options.overwrite && motion_video_file.exists() {
                 warn!(
                     "Not processing {}, the extracted motion file already exists.",
                     picture.short_path
@@ -87,10 +92,10 @@ impl SpecialHandler for MotionPhoto {
 
     fn handle(
         &self,
+        options: &Options,
         picture: &Picture,
         destination: &Path,
         _destination_exists: bool,
-        _overwrite: bool,
         mode: &SortMode,
     ) -> Result<(), Error> {
         let mut temp_files = TempFileTracker::new();
@@ -103,49 +108,68 @@ impl SpecialHandler for MotionPhoto {
 
         let motion_mode = get_motion_mode(picture);
 
+        let mut temp_video_path_pending = None;
+
         // step 1: extract the video file
-        let temp_video_path = temp_files.with_prefix_in(file_prefix, temp_dir);
-        let temp_video = File::create(&temp_video_path)?;
-        Exif::execute(
-            vec![
-                OsStr::new("-m"),
-                OsStr::new("-b"),
-                OsStr::new(&format!("-{}", motion_mode.get_video_key_to_extract())),
-                adjust_canonicalization(&picture.path).as_os_str(),
-            ],
-            Some(temp_video.into()),
-        )?;
+        if options.motion_extract {
+            let temp_video_path = temp_files.with_prefix_in(file_prefix, temp_dir);
+            let temp_video = File::create(&temp_video_path)?;
+            Exif::execute(
+                vec![
+                    OsStr::new("-m"),
+                    OsStr::new("-b"),
+                    OsStr::new(&format!("-{}", motion_mode.get_video_key_to_extract())),
+                    adjust_canonicalization(&picture.path).as_os_str(),
+                ],
+                Some(temp_video.into()),
+            )?;
+            temp_video_path_pending = Some(temp_video_path);
+        }
 
-        // step 2: copy the file using exiftool, and remove the baked in video file
-        let temp_picture = temp_files.with_prefix_in(file_prefix, temp_dir);
+        if options.motion_strip {
+            // step 2: copy the file using exiftool, and remove the baked in video file
+            let temp_picture = temp_files.with_prefix_in(file_prefix, temp_dir);
 
-        Exif::execute(
-            vec![
-                OsStr::new("-m"),
-                OsStr::new("-U"),
-                OsStr::new("-o"),
-                adjust_canonicalization(&temp_picture).as_os_str(),
-                OsStr::new(&format!("-{}=", motion_mode.get_video_key_to_strip())),
-                adjust_canonicalization(&picture.path).as_os_str(),
-            ],
-            None,
-        )?;
+            Exif::execute(
+                vec![
+                    OsStr::new("-m"),
+                    OsStr::new("-U"),
+                    OsStr::new("-o"),
+                    adjust_canonicalization(&temp_picture).as_os_str(),
+                    OsStr::new(&format!("-{}=", motion_mode.get_video_key_to_strip())),
+                    adjust_canonicalization(&picture.path).as_os_str(),
+                ],
+                None,
+            )?;
 
-        rename(&temp_video_path, motion_video_file)?;
-        rename(&temp_picture, destination)?;
+            rename(&temp_picture, destination)?;
 
-        match mode {
-            SortMode::Copy => {
-                // we've extracted both files, so nothing else to do
+            match mode {
+                SortMode::Copy => {
+                    // we've extracted both files, so nothing else to do
+                }
+                SortMode::Move => {
+                    // we've extracted both files, so should delete the original
+                    remove_file(&picture.path)?;
+                }
+                SortMode::HardLink => {
+                    // since this special handler writes different source files,
+                    //  hardlinking isn't an option
+                }
             }
-            SortMode::Move => {
-                // we've extracted both files, so should delete the original
-                remove_file(&picture.path)?;
-            }
-            SortMode::HardLink => {
-                // since this special handler writes different source files,
-                //  hardlinking isn't an option
-            }
+        } else {
+            sort_single_picture_file(
+                picture,
+                mode,
+                false,
+                "",
+                &destination.to_path_buf(),
+                &picture.path,
+            )?;
+        }
+
+        if let Some(temp_video_path) = temp_video_path_pending {
+            rename(&temp_video_path, &motion_video_file)?;
         }
 
         Ok(())

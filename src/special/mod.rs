@@ -1,4 +1,4 @@
-use crate::options::SortMode;
+use crate::options::{Options, SortMode};
 use crate::picture::Picture;
 use crate::special::motion::MotionPhoto;
 use anyhow::anyhow;
@@ -14,19 +14,19 @@ trait SpecialHandler: Sync {
 
     fn can_handle(
         &self,
+        options: &Options,
         picture: &Picture,
         destination: &Path,
         destination_exists: bool,
-        overwrite: bool,
         mode: &SortMode,
     ) -> bool;
 
     fn handle(
         &self,
+        options: &Options,
         picture: &Picture,
         destination: &Path,
         destination_exists: bool,
-        overwrite: bool,
         mode: &SortMode,
     ) -> Result<(), Error>;
 }
@@ -40,17 +40,20 @@ lazy_static! {
 }
 
 pub fn execute_special_handlers(
-    dry_run: bool,
+    options: &Options,
     dry_run_prefix: &str,
     picture: &Picture,
     destination: &Path,
     destination_exists: bool,
-    overwrite: bool,
     mode: &SortMode,
 ) -> Result<bool, Error> {
+    if !options.motion_extract && !options.motion_strip {
+        return Ok(false);
+    }
+
     for handler in SPECIAL_HANDLERS.iter() {
-        if handler.can_handle(picture, destination, destination_exists, overwrite, mode) {
-            if !dry_run {
+        if handler.can_handle(options, picture, destination, destination_exists, mode) {
+            if !options.dry_run {
                 debug!(
                     "{}Special handler {} handling {}",
                     dry_run_prefix,
@@ -58,7 +61,7 @@ pub fn execute_special_handlers(
                     picture.short_path
                 );
                 return handler
-                    .handle(picture, destination, destination_exists, overwrite, mode)
+                    .handle(options, picture, destination, destination_exists, mode)
                     .map_err(|err| anyhow!("{}: {}", handler.name(), err))
                     .map(|_| true);
             } else {
