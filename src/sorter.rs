@@ -7,7 +7,7 @@ use anyhow::{Context, Error};
 use futures::stream::{self, StreamExt};
 use log::{debug, error, info, warn};
 use std::fs::{create_dir_all, metadata};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
 pub async fn sort(state: AppState) -> Result<(), Error> {
@@ -183,58 +183,7 @@ async fn process_picture(
                 return Ok(());
             }
 
-            match mode {
-                SortMode::Copy => {
-                    if !dry_run {
-                        std::fs::copy(path, &destination).with_context(|| {
-                            format!("Error copying {} to {}", &path, &destination.display())
-                        })?;
-                    }
-                    info!(
-                        "{}copied {} to {}",
-                        dry_run_prefix,
-                        picture.short_path,
-                        destination.display()
-                    )
-                }
-                SortMode::Move => {
-                    if !dry_run {
-                        std::fs::copy(path, &destination).with_context(|| {
-                            format!("Error copying {} to {}", &path, &destination.display())
-                        })?;
-                        std::fs::remove_file(path).with_context(|| {
-                            format!(
-                                "Error removing file at {} (already copied to {})",
-                                &path,
-                                &destination.display()
-                            )
-                        })?;
-                    }
-                    info!(
-                        "{}moved {} to {}",
-                        dry_run_prefix,
-                        picture.short_path,
-                        destination.display()
-                    )
-                }
-                SortMode::HardLink => {
-                    if !dry_run {
-                        std::fs::hard_link(path, &destination).with_context(|| {
-                            format!(
-                                "Error creating hard-link from {} to {}",
-                                &path,
-                                &destination.display()
-                            )
-                        })?;
-                    }
-                    info!(
-                        "{}hard-linked {} to {}",
-                        dry_run_prefix,
-                        picture.short_path,
-                        destination.display()
-                    )
-                }
-            }
+            sort_single_picture_file(&picture, mode, dry_run, dry_run_prefix, &destination, path)?;
         }
         Err(err) => warn!(
             "Skipping {}, unable to apply name template due to `{}`.",
@@ -245,7 +194,69 @@ async fn process_picture(
     Ok(())
 }
 
-fn are_files_different(path: &str, destination: &std::path::PathBuf) -> anyhow::Result<bool> {
+pub fn sort_single_picture_file(
+    picture: &Picture,
+    mode: &SortMode,
+    dry_run: bool,
+    dry_run_prefix: &str,
+    destination: &PathBuf,
+    path: &String,
+) -> Result<(), Error> {
+    Ok(match mode {
+        SortMode::Copy => {
+            if !dry_run {
+                std::fs::copy(path, destination).with_context(|| {
+                    format!("Error copying {} to {}", &path, destination.display())
+                })?;
+            }
+            info!(
+                "{}copied {} to {}",
+                dry_run_prefix,
+                picture.short_path,
+                destination.display()
+            )
+        }
+        SortMode::Move => {
+            if !dry_run {
+                std::fs::copy(path, destination).with_context(|| {
+                    format!("Error copying {} to {}", &path, destination.display())
+                })?;
+                std::fs::remove_file(path).with_context(|| {
+                    format!(
+                        "Error removing file at {} (already copied to {})",
+                        &path,
+                        &destination.display()
+                    )
+                })?;
+            }
+            info!(
+                "{}moved {} to {}",
+                dry_run_prefix,
+                picture.short_path,
+                destination.display()
+            )
+        }
+        SortMode::HardLink => {
+            if !dry_run {
+                std::fs::hard_link(path, destination).with_context(|| {
+                    format!(
+                        "Error creating hard-link from {} to {}",
+                        &path,
+                        destination.display()
+                    )
+                })?;
+            }
+            info!(
+                "{}hard-linked {} to {}",
+                dry_run_prefix,
+                picture.short_path,
+                destination.display()
+            )
+        }
+    })
+}
+
+fn are_files_different(path: &str, destination: &PathBuf) -> anyhow::Result<bool> {
     let source_metadata = metadata(path)?;
     let destination_metadata = metadata(destination)?;
 

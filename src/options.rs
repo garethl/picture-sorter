@@ -44,6 +44,18 @@ pub struct Options {
     /// Dry-run mode
     #[clap(short, long, value_parser, default_value_t = false)]
     pub dry_run: bool,
+
+    /// Extract motion video from photos where possible into separate files
+    #[clap(long, value_parser, default_value_t = false)]
+    pub motion_extract: bool,
+
+    /// Strip motion video from photos where possible.
+    ///
+    /// If both this and extract_motion are true, the motion video is extracted
+    /// into a separate file, and the photo file is copied without the motion
+    /// video embedded.
+    #[clap(long, value_parser, default_value_t = false)]
+    pub motion_strip: bool,
 }
 
 #[derive(clap::ValueEnum, Clone, Default, Debug, PartialEq, Serialize)]

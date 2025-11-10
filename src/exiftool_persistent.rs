@@ -2,7 +2,7 @@ use std::path::Path;
 
 use ::exiftool::{ExifTool, ExifToolError};
 use deadpool::managed::{Manager, Metrics, Object, Pool, RecycleResult};
-use serde_json::{Map, Value};
+use serde_json::Value;
 use thiserror::Error;
 
 use crate::exiftool::Exif;

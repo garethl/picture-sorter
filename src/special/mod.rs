@@ -54,6 +54,10 @@ pub async fn execute_special_handlers(
     overwrite: bool,
     mode: &SortMode,
 ) -> Result<bool, Error> {
+    if !state.options.motion_extract {
+        return Ok(false);
+    }
+
     for handler in SPECIAL_HANDLERS.iter() {
         if handler.can_handle(
             state.clone(),
