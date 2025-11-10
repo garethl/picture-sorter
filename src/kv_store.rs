@@ -43,11 +43,16 @@ where
     V: Convertable,
 {
     pub fn new(store_file_name: &str) -> Result<KVStore<K, V>> {
-        let manager = SqliteConnectionManager::file(store_file_name);
+        let manager = SqliteConnectionManager::file(store_file_name).with_init(|c| {
+            c.execute_batch(
+                "PRAGMA journal_mode = WAL;
+                PRAGMA synchronous = NORMAL;",
+            )
+        });
         let pool = Pool::builder()
             .idle_timeout(Some(Duration::from_millis(10000)))
             .connection_timeout(Duration::from_millis(1000))
-            .min_idle(Some(0))
+            .min_idle(Some(1))
             .build(manager)?;
 
         pool.get()?.execute(
