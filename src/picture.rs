@@ -1,4 +1,3 @@
-use crate::Cache;
 use crate::app_state::AppState;
 use crate::metadata::{ExifMetadata, get_metadata};
 use lazy_static::lazy_static;

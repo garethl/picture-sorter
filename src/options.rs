@@ -1,4 +1,4 @@
-use clap::{Parser, ValueEnum};
+use clap::Parser;
 use serde::Serialize;
 use std::{fmt::Display, path::Path};
 
